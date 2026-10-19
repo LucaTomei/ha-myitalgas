@@ -73,7 +73,7 @@
             "prezzo_sc1": "Somma di tutte le voci al metro cubo: materia prima, trasporto e gestione del contatore, oneri di sistema, accisa e addizionale regionale, più IVA. NON è il totale della bolletta diviso gli Smc: il totale comprende anche le quote fisse, da indicare a parte.",
             "prezzo_sc2": "Se vuoto si usa il prezzo dello scaglione precedente. Cambia soprattutto per accisa e addizionale regionale.",
             "prezzo_sc3": "Se vuoto si usa il prezzo dello scaglione precedente. Oltre 480 Smc l'IVA passa dal 10% al 22%.",
-            "quota_fissa": "Somma delle quote fisse mensili (commercializzazione, trasporto, oneri), IVA inclusa. Viene ripartita giorno per giorno."
+            "quota_fissa": "Somma delle quote fisse mensili (commercializzazione, trasporto, oneri), con IVA al 22%. Viene ripartita giorno per giorno."
           }
         },
         "reconfigure": {
@@ -91,7 +91,7 @@
             "prezzo_sc1": "Somma di tutte le voci al metro cubo, IVA inclusa. NON è il totale della bolletta diviso gli Smc.",
             "prezzo_sc2": "Se vuoto si usa il prezzo dello scaglione precedente.",
             "prezzo_sc3": "Se vuoto si usa il prezzo dello scaglione precedente.",
-            "quota_fissa": "Somma delle quote fisse mensili, IVA inclusa."
+            "quota_fissa": "Somma delle quote fisse mensili (commercializzazione, trasporto, oneri), con IVA al 22%. Viene ripartita giorno per giorno."
           }
         }
       },

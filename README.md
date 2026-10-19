@@ -171,9 +171,9 @@ Come viene calcolato il costo:
 3. si usa il periodo tariffario in vigore in quel giorno;
 4. si aggiunge la quota fissa del giorno (dodici mensilità divise sui giorni dell'anno).
 
-Prima della data del primo periodo tariffario i costi non vengono calcolati. Le bollette
-applicano gli scaglioni al periodo fatturato, riproporzionati sui giorni: la ripartizione
-tra i singoli mesi può quindi differire di poco da quella della bolletta.
+Prima della data del primo periodo tariffario i costi non vengono calcolati. Gli scaglioni
+sono applicati sul consumo cumulato dal 1° gennaio, come nelle bollette: a gennaio i
+primi 120 Smc sono nel primo scaglione, poi si passa al secondo fino a fine anno.
 
 ## Come calcolare il prezzo
 
@@ -191,7 +191,7 @@ Le voci al metro cubo sono nel dettaglio della bolletta (o nella scheda dell'off
 | Oneri di sistema, quota variabile | Stabiliti da ARERA. |
 | Accisa | Dipende dallo scaglione annuo; più bassa nelle regioni del Mezzogiorno. |
 | Addizionale regionale | Dipende dalla regione e dallo scaglione. |
-| IVA | Uso domestico: 10% fino a 480 Smc/anno, 22% oltre. |
+| IVA | Uso domestico: 10% sui consumi fino a 480 Smc/anno, 22% oltre. Sulle quote fisse sempre 22%. |
 
 Esempio (valori **indicativi**: usa quelli della tua bolletta):
 
@@ -217,8 +217,13 @@ di più man mano che i consumi dell'anno crescono, e il prezzo torna a scendere 
 1° gennaio.
 
 **Quota fissa**, sempre con valori indicativi: commercializzazione 8,00 €/mese + quota
-fissa di trasporto 5,00 €/mese + oneri fissi 0,50 €/mese = 13,50 €/mese, × 1,10 di IVA =
-**14,85 €/mese**.
+fissa di trasporto 5,00 €/mese + oneri fissi 0,50 €/mese = 13,50 €/mese, × 1,22 di IVA
+(sulle quote fisse l'IVA è sempre al 22%) = **16,47 €/mese**.
+
+**Offerte indicizzate** (ad esempio PSV + spread): ogni mese cambia solo il prezzo della
+materia prima, che trovi in bolletta (es. *Corrispettivo Gas Index*); aggiungi un periodo
+tariffario dal 1° di ogni mese ricalcolando i tre prezzi. Le voci regolate (trasporto,
+distribuzione, oneri) cambiano invece a trimestre o ad anno.
 
 ## Pannello Energia
 

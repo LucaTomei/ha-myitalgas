@@ -2,6 +2,16 @@
 
 Tutte le modifiche rilevanti di MyItalgas per Home Assistant.
 
+## [1.2.1] - 2026-10-19
+
+### Correzioni
+
+- Guida al prezzo: sulle quote fisse l'IVA è sempre al 22% (il 10% vale solo per i
+  consumi fino a 480 Smc/anno). Corretto anche il suggerimento nel modulo del periodo
+  tariffario.
+- Guida al prezzo: chiarito che gli scaglioni si applicano sul consumo cumulato dal
+  1° gennaio, come nelle bollette, e aggiunte le indicazioni per le offerte indicizzate.
+
 ## [1.2.0] - 2026-10-19
 
 ### Novità

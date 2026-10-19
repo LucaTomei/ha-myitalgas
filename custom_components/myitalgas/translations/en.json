@@ -73,7 +73,7 @@
             "prezzo_sc1": "Sum of all per-cubic-meter items: gas, transport and meter management, system charges, excise and regional surcharge, plus VAT. It is NOT the bill total divided by the Smc: the total also includes the fixed fees, entered separately.",
             "prezzo_sc2": "If empty, the price of the previous bracket is used. It changes mostly because of excise and regional surcharge.",
             "prezzo_sc3": "If empty, the price of the previous bracket is used. Above 480 Smc VAT rises from 10% to 22%.",
-            "quota_fissa": "Sum of the monthly fixed fees (sales, transport, system charges), VAT included. It is spread day by day."
+            "quota_fissa": "Sum of the monthly fixed fees (sales, transport, system charges), with 22% VAT. It is spread day by day."
           }
         },
         "reconfigure": {
@@ -91,7 +91,7 @@
             "prezzo_sc1": "Sum of all per-cubic-meter items, VAT included. It is NOT the bill total divided by the Smc.",
             "prezzo_sc2": "If empty, the price of the previous bracket is used.",
             "prezzo_sc3": "If empty, the price of the previous bracket is used.",
-            "quota_fissa": "Sum of the monthly fixed fees, VAT included."
+            "quota_fissa": "Sum of the monthly fixed fees (sales, transport, system charges), with 22% VAT. It is spread day by day."
           }
         }
       },
