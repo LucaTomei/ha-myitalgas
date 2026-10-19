@@ -2,6 +2,16 @@
 
 Tutte le modifiche rilevanti di MyItalgas per Home Assistant.
 
+## [1.1.1] - 2026-10-19
+
+### Correzioni
+
+- Installazione da HACS più affidabile: HACS ora scarica l'integrazione dall'archivio del
+  repository, come per la grande maggioranza delle integrazioni, invece che dallo zip
+  allegato alla release. Con alcune versioni di HACS e su alcune reti il download dello
+  zip falliva con "Could not download". Lo zip resta allegato a ogni release per
+  l'installazione manuale.
+
 ## [1.1.0] - 2026-10-19
 
 ### Novità
