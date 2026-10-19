@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date
 import logging
 from typing import Any
 
@@ -38,6 +37,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from . import tariffe
 from .api import (
     ItalgasAuthError,
     ItalgasClient,
@@ -371,26 +371,6 @@ def _schema_tariffa(attuali: Mapping[str, Any]) -> vol.Schema:
     )
 
 
-def _dati_tariffa(user_input: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalizza il form: gli scaglioni non compilati prendono il prezzo del precedente."""
-    sc1 = float(user_input[CONF_PREZZO_SC1])
-    sc2 = user_input.get(CONF_PREZZO_SC2)
-    sc2 = sc1 if sc2 is None else float(sc2)
-    sc3 = user_input.get(CONF_PREZZO_SC3)
-    sc3 = sc2 if sc3 is None else float(sc3)
-    return {
-        CONF_DAL: date.fromisoformat(str(user_input[CONF_DAL])).isoformat(),
-        CONF_PREZZO_SC1: sc1,
-        CONF_PREZZO_SC2: sc2,
-        CONF_PREZZO_SC3: sc3,
-        CONF_QUOTA_FISSA: float(user_input.get(CONF_QUOTA_FISSA) or 0.0),
-    }
-
-
-def _titolo_tariffa(dati: Mapping[str, Any]) -> str:
-    return f"Dal {date.fromisoformat(dati[CONF_DAL]):%d/%m/%Y}"
-
-
 class TariffaSubentryFlow(ConfigSubentryFlow):
     """Aggiunta e modifica di un periodo tariffario."""
 
@@ -405,12 +385,12 @@ class TariffaSubentryFlow(ConfigSubentryFlow):
         """Nuovo periodo tariffario."""
         errori: dict[str, str] = {}
         if user_input is not None:
-            dati = _dati_tariffa(user_input)
+            dati = tariffe.normalizza(user_input)
             if dati[CONF_DAL] in self._date_occupate():
                 errori[CONF_DAL] = "dal_esistente"
             else:
                 return self.async_create_entry(
-                    title=_titolo_tariffa(dati), data=dati, unique_id=dati[CONF_DAL]
+                    title=tariffe.titolo(dati), data=dati, unique_id=dati[CONF_DAL]
                 )
         return self.async_show_form(
             step_id="user", data_schema=_schema_tariffa(user_input or {}), errors=errori
@@ -424,7 +404,7 @@ class TariffaSubentryFlow(ConfigSubentryFlow):
         subentry = self._get_reconfigure_subentry()
         errori: dict[str, str] = {}
         if user_input is not None:
-            dati = _dati_tariffa(user_input)
+            dati = tariffe.normalizza(user_input)
             if dati[CONF_DAL] in self._date_occupate(esclusa=subentry.subentry_id):
                 errori[CONF_DAL] = "dal_esistente"
             else:
@@ -433,7 +413,7 @@ class TariffaSubentryFlow(ConfigSubentryFlow):
                     entry,
                     subentry,
                     data=dati,
-                    title=_titolo_tariffa(dati),
+                    title=tariffe.titolo(dati),
                     unique_id=dati[CONF_DAL],
                 )
                 return self.async_abort(reason="reconfigure_successful")

@@ -289,6 +289,58 @@
     },
     "update_failed": {
       "message": "Error while downloading the readings: {errore}"
+    },
+    "fornitura_non_trovata": {
+      "message": "No MyItalgas supply with id {entry_id}."
+    },
+    "periodo_non_trovato": {
+      "message": "No tariff period starting on {dal}."
+    }
+  },
+  "services": {
+    "imposta_periodo_tariffario": {
+      "name": "Set tariff period",
+      "description": "Creates a tariff period, or updates the one starting on the same date. Useful to automate prices from other integrations or sensors.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Supply",
+          "description": "The MyItalgas supply to apply the prices to."
+        },
+        "dal": {
+          "name": "Valid from",
+          "description": "Date from which the prices apply."
+        },
+        "prezzo_sc1": {
+          "name": "Price up to 120 Smc/year",
+          "description": "€/Smc, VAT and taxes included."
+        },
+        "prezzo_sc2": {
+          "name": "Price 121 to 480 Smc/year",
+          "description": "€/Smc, VAT and taxes included. If missing, the previous price is used."
+        },
+        "prezzo_sc3": {
+          "name": "Price over 480 Smc/year",
+          "description": "€/Smc, VAT and taxes included. If missing, the previous price is used."
+        },
+        "quota_fissa": {
+          "name": "Fixed fee",
+          "description": "€/month, VAT included (22%)."
+        }
+      }
+    },
+    "rimuovi_periodo_tariffario": {
+      "name": "Remove tariff period",
+      "description": "Deletes the tariff period starting on the given date.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Supply",
+          "description": "The MyItalgas supply."
+        },
+        "dal": {
+          "name": "Valid from",
+          "description": "Start date of the period to delete."
+        }
+      }
     }
   }
 }

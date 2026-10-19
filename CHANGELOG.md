@@ -2,6 +2,15 @@
 
 Tutte le modifiche rilevanti di MyItalgas per Home Assistant.
 
+## [1.3.0] - 2026-10-19
+
+### Novità
+
+- Azioni **`myitalgas.imposta_periodo_tariffario`** e
+  **`myitalgas.rimuovi_periodo_tariffario`**: i periodi tariffari si possono creare,
+  aggiornare ed eliminare da automazioni o da altre integrazioni, senza passare
+  dall'interfaccia. La fornitura si ricarica da sola con i nuovi prezzi.
+
 ## [1.2.1] - 2026-10-19
 
 ### Correzioni

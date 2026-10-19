@@ -35,5 +35,13 @@
         "default": "mdi:currency-eur"
       }
     }
+  },
+  "services": {
+    "imposta_periodo_tariffario": {
+      "service": "mdi:cash-plus"
+    },
+    "rimuovi_periodo_tariffario": {
+      "service": "mdi:cash-remove"
+    }
   }
 }

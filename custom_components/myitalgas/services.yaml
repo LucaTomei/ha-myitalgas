@@ -1,0 +1,61 @@
+imposta_periodo_tariffario:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: myitalgas
+    dal:
+      required: true
+      example: "2026-10-01"
+      selector:
+        date:
+    prezzo_sc1:
+      required: true
+      example: 1.0547
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: "€/Smc"
+    prezzo_sc2:
+      example: 1.4764
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: "€/Smc"
+    prezzo_sc3:
+      example: 1.6314
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: any
+          mode: box
+          unit_of_measurement: "€/Smc"
+    quota_fissa:
+      example: 17.60
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: any
+          mode: box
+          unit_of_measurement: "€/mese"
+rimuovi_periodo_tariffario:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: myitalgas
+    dal:
+      required: true
+      example: "2026-10-01"
+      selector:
+        date:

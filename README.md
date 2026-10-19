@@ -33,6 +33,7 @@ Supervised).
 - [Opzioni](#opzioni)
 - [Periodi tariffari](#periodi-tariffari)
 - [Come calcolare il prezzo](#come-calcolare-il-prezzo)
+- [Automatizzare i prezzi](#automatizzare-i-prezzi)
 - [Pannello Energia](#pannello-energia)
 - [Entità](#entità)
 - [Come funziona](#come-funziona)
@@ -224,6 +225,48 @@ fissa di trasporto 5,00 €/mese + oneri fissi 0,50 €/mese = 13,50 €/mese, �
 materia prima, che trovi in bolletta (es. *Corrispettivo Gas Index*); aggiungi un periodo
 tariffario dal 1° di ogni mese ricalcolando i tre prezzi. Le voci regolate (trasporto,
 distribuzione, oneri) cambiano invece a trimestre o ad anno.
+
+## Automatizzare i prezzi
+
+I periodi tariffari si possono creare anche da automazioni o da altre integrazioni con
+l'azione **`myitalgas.imposta_periodo_tariffario`**: crea il periodo che inizia nella data
+indicata, oppure lo aggiorna se esiste già. Gli scaglioni non indicati prendono il prezzo
+del precedente.
+
+```yaml
+action: myitalgas.imposta_periodo_tariffario
+data:
+  config_entry_id: 0123456789abcdef  # la tua fornitura (selezionabile dall'editor visuale)
+  dal: "2026-10-01"
+  prezzo_sc1: 1.0547
+  prezzo_sc2: 1.4764
+  prezzo_sc3: 1.6314
+  quota_fissa: 17.60
+```
+
+Per eliminare un periodo: **`myitalgas.rimuovi_periodo_tariffario`** con `config_entry_id` e `dal`.
+
+Esempio: il 1° di ogni mese crea il periodo con il prezzo letto da un sensore (ad esempio
+un sensore REST o il sensore di un'altra integrazione):
+
+```yaml
+automation:
+  - alias: "Prezzo gas del mese"
+    triggers:
+      - trigger: time
+        at: "06:00:00"
+    conditions:
+      - condition: template
+        value_template: "{{ now().day == 1 }}"
+    actions:
+      - action: myitalgas.imposta_periodo_tariffario
+        data:
+          config_entry_id: 0123456789abcdef
+          dal: "{{ now().date().isoformat() }}"
+          prezzo_sc1: "{{ states('sensor.prezzo_gas_scaglione_1') | float }}"
+          prezzo_sc2: "{{ states('sensor.prezzo_gas_scaglione_2') | float }}"
+          quota_fissa: 17.60
+```
 
 ## Pannello Energia
 

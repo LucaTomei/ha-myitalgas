@@ -27,7 +27,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import VolumeConverter
 
-from . import calcoli
+from . import calcoli, tariffe
 from .api import (
     ItalgasAuthError,
     ItalgasClient,
@@ -40,14 +40,9 @@ from .const import (
     COEFFICIENTE_DEFAULT,
     CONF_ALIAS,
     CONF_COEFFICIENTE,
-    CONF_DAL,
     CONF_DISTRIBUZIONE,
     CONF_INTERVALLO_ORE,
     CONF_PDR,
-    CONF_PREZZO_SC1,
-    CONF_PREZZO_SC2,
-    CONF_PREZZO_SC3,
-    CONF_QUOTA_FISSA,
     CONF_SENSORE_TEMPERATURA,
     CONF_STATISTICA_SMC,
     DISTRIBUZIONE_DEFAULT,
@@ -56,7 +51,6 @@ from .const import (
     GIORNI_RILETTURA,
     INTERVALLO_ORE_DEFAULT,
     STORAGE_VERSION,
-    SUBENTRY_TARIFFA,
 )
 from .parser import Lettura
 
@@ -88,37 +82,8 @@ class Impostazioni:
             distribuzione=distribuzione,
             sensore_temperatura=opzioni.get(CONF_SENSORE_TEMPERATURA) or None,
             statistica_smc=bool(opzioni.get(CONF_STATISTICA_SMC, False)),
-            tariffe=tariffe_da_entry(entry),
+            tariffe=tariffe.da_entry(entry),
         )
-
-
-def tariffa_da_dati(dati: dict[str, Any]) -> Tariffa:
-    """Periodo tariffario a partire dai dati di una sottovoce."""
-    sc1 = float(dati[CONF_PREZZO_SC1])
-    sc2 = dati.get(CONF_PREZZO_SC2)
-    sc3 = dati.get(CONF_PREZZO_SC3)
-    sc2 = sc1 if sc2 is None else float(sc2)
-    sc3 = sc2 if sc3 is None else float(sc3)
-    return Tariffa(
-        dal=date.fromisoformat(dati[CONF_DAL]),
-        prezzo_sc1=sc1,
-        prezzo_sc2=sc2,
-        prezzo_sc3=sc3,
-        quota_fissa=float(dati.get(CONF_QUOTA_FISSA) or 0.0),
-    )
-
-
-def tariffe_da_entry(entry: ConfigEntry) -> list[Tariffa]:
-    """Periodi tariffari configurati, in ordine di decorrenza."""
-    tariffe = []
-    for subentry in entry.subentries.values():
-        if subentry.subentry_type != SUBENTRY_TARIFFA:
-            continue
-        try:
-            tariffe.append(tariffa_da_dati(dict(subentry.data)))
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning("Periodo tariffario '%s' non valido, ignorato", subentry.title)
-    return sorted(tariffe, key=lambda t: t.dal)
 
 
 @dataclass(slots=True)

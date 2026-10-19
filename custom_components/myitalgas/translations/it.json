@@ -289,6 +289,58 @@
     },
     "update_failed": {
       "message": "Errore durante lo scaricamento delle letture: {errore}"
+    },
+    "fornitura_non_trovata": {
+      "message": "Nessuna fornitura MyItalgas con identificativo {entry_id}."
+    },
+    "periodo_non_trovato": {
+      "message": "Nessun periodo tariffario che inizia il {dal}."
+    }
+  },
+  "services": {
+    "imposta_periodo_tariffario": {
+      "name": "Imposta periodo tariffario",
+      "description": "Crea un periodo tariffario, o aggiorna quello che inizia nella stessa data. Utile per automatizzare i prezzi da altre integrazioni o sensori.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Fornitura",
+          "description": "La fornitura MyItalgas a cui applicare i prezzi."
+        },
+        "dal": {
+          "name": "In vigore dal",
+          "description": "Data da cui valgono i prezzi."
+        },
+        "prezzo_sc1": {
+          "name": "Prezzo fino a 120 Smc/anno",
+          "description": "€/Smc, IVA e imposte incluse."
+        },
+        "prezzo_sc2": {
+          "name": "Prezzo da 121 a 480 Smc/anno",
+          "description": "€/Smc, IVA e imposte incluse. Se assente vale il prezzo precedente."
+        },
+        "prezzo_sc3": {
+          "name": "Prezzo oltre 480 Smc/anno",
+          "description": "€/Smc, IVA e imposte incluse. Se assente vale il prezzo precedente."
+        },
+        "quota_fissa": {
+          "name": "Quota fissa",
+          "description": "€/mese, IVA inclusa (22%)."
+        }
+      }
+    },
+    "rimuovi_periodo_tariffario": {
+      "name": "Rimuovi periodo tariffario",
+      "description": "Elimina il periodo tariffario che inizia nella data indicata.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Fornitura",
+          "description": "La fornitura MyItalgas."
+        },
+        "dal": {
+          "name": "In vigore dal",
+          "description": "Data di inizio del periodo da eliminare."
+        }
+      }
     }
   }
 }

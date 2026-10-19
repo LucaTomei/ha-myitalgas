@@ -8,9 +8,10 @@ from types import MappingProxyType
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 
 from .api import ItalgasClient
 from .const import (
@@ -27,12 +28,21 @@ from .const import (
     SUBENTRY_TARIFFA,
 )
 from .coordinator import ItalgasConfigEntry, ItalgasCoordinator
+from .servizi import async_registra_servizi
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 DAL_PREZZO_UNICO = "1900-01-01"
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Registra le azioni, disponibili anche prima che le forniture siano avviate."""
+    async_registra_servizi(hass)
+    return True
 
 
 def id_issue_coefficiente(entry_id: str) -> str:
