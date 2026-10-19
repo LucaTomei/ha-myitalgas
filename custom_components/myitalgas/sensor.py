@@ -166,7 +166,8 @@ SENSORI: tuple[ItalgasSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         valore=lambda d, _: d.ultimo_aggiornamento,
         attributi=lambda d: {
-            "periodi_non_scaricati": [f"{a.isoformat()}/{b.isoformat()}" for a, b in d.mancanti]
+            "storico_completo": d.storico_completo,
+            "periodi_non_scaricati": [f"{a.isoformat()}/{b.isoformat()}" for a, b in d.mancanti],
         },
     ),
 )

@@ -23,6 +23,9 @@ INTERVALLO_ORE_MAX: Final = 168
 # A ogni aggiornamento si riscaricano anche le ultime settimane già salvate,
 # per recepire eventuali rettifiche fatte dal distributore.
 GIORNI_RILETTURA: Final = 90
+# Al primo avvio si scaricano subito solo le letture recenti (configurazione rapida);
+# lo storico completo viene recuperato subito dopo, in background.
+GIORNI_PRIMO_AVVIO: Final = 120
 
 PORTALE_URL: Final = "https://clienti.italgas.it/clienti/"
 

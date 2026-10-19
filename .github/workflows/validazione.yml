@@ -50,3 +50,17 @@ jobs:
           ruff format --check .
       - name: Pytest
         run: pytest
+
+  test-versione-minima:
+    name: Test con Home Assistant 2025.11 (versione minima)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Dipendenze
+        # 0.13.294 = Home Assistant 2025.11.0; pycares 5 non è compatibile con quella versione
+        run: pip install "pytest-homeassistant-custom-component==0.13.294" "pycares<5"
+      - name: Pytest
+        run: pytest

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 import logging
@@ -24,7 +25,13 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import VolumeConverter
 
 from . import calcoli
-from .api import ItalgasAuthError, ItalgasClient, ItalgasError, ItalgasPdrNotFoundError
+from .api import (
+    ItalgasAuthError,
+    ItalgasClient,
+    ItalgasError,
+    ItalgasPdrNotFoundError,
+    RisultatoLetture,
+)
 from .calcoli import Periodo
 from .const import (
     COEFFICIENTE_DEFAULT,
@@ -34,6 +41,7 @@ from .const import (
     CONF_PDR,
     CONF_PREZZO,
     DOMAIN,
+    GIORNI_PRIMO_AVVIO,
     GIORNI_RILETTURA,
     INTERVALLO_ORE_DEFAULT,
     PREZZO_DEFAULT,
@@ -54,6 +62,7 @@ class DatiItalgas:
     periodi: list[Periodo]
     mancanti: list[tuple[date, date]] = field(default_factory=list)
     ultimo_aggiornamento: datetime | None = None
+    storico_completo: bool = False
 
     @property
     def ultima(self) -> Lettura | None:
@@ -93,7 +102,8 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
             hass,
             _LOGGER,
             config_entry=entry,
-            name=f"{DOMAIN} {entry.data[CONF_PDR]}",
+            # niente PDR nel nome: compare nei log che gli utenti condividono
+            name=f"{DOMAIN} {entry.data.get(CONF_ALIAS) or entry.data[CONF_PDR][-4:]}",
             update_interval=timedelta(hours=ore),
         )
         self.client = client
@@ -105,6 +115,8 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
         self._mancanti: list[tuple[date, date]] = []
         self._data_minima: date | None = None
         self._ultimo_aggiornamento: datetime | None = None
+        self._storico_completo = False
+        self._recupero: asyncio.Task[None] | None = None
 
     async def _async_setup(self) -> None:
         """Carica lo storico salvato."""
@@ -126,16 +138,19 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
                 self._data_minima = date.fromisoformat(minima)
             if ultimo := salvati.get("ultimo_aggiornamento"):
                 self._ultimo_aggiornamento = dt_util.parse_datetime(ultimo)
+            # la versione 1.0.0 scaricava sempre tutto lo storico al primo avvio
+            self._storico_completo = bool(salvati.get("storico_completo", self._letture))
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.warning("Storico salvato non leggibile, verrà riscaricato: %s", err)
             self._letture.clear()
             self._mancanti.clear()
             self._data_minima = None
+            self._storico_completo = False
 
-    def _inizio_ricerca(self, oggi: date) -> date | None:
-        """Da quando scaricare: None (tutto) al primo avvio, altrimenti le ultime settimane."""
+    def _inizio_ricerca(self, oggi: date) -> date:
+        """Da quando scaricare: le ultime settimane e gli eventuali periodi mancanti."""
         if not self._letture:
-            return None
+            return oggi - timedelta(days=GIORNI_PRIMO_AVVIO)
         inizio = max(d for d, _ in self._letture) - timedelta(days=GIORNI_RILETTURA)
         if self._mancanti:
             inizio = min(inizio, *(a for a, _ in self._mancanti))
@@ -150,15 +165,15 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
             periodi=calcoli.periodi(letture),
             mancanti=list(self._mancanti),
             ultimo_aggiornamento=self._ultimo_aggiornamento,
+            storico_completo=self._storico_completo,
         )
 
     async def _async_update_data(self) -> DatiItalgas:
         """Scarica le letture nuove e aggiorna storico e statistiche."""
         oggi = dt_util.now().date()
+        inizio = self._inizio_ricerca(oggi)
         try:
-            risultato = await self.client.scarica_letture(
-                self.pdr, self._inizio_ricerca(oggi), oggi
-            )
+            risultato = await self.client.scarica_letture(self.pdr, inizio, oggi)
         except ItalgasAuthError as err:
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN, translation_key="auth_failed"
@@ -181,17 +196,44 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
                 translation_placeholders={"errore": str(err)},
             ) from err
 
+        dati = await self._unisci(inizio, risultato)
+        if not self._storico_completo and self._recupero is None:
+            self._recupero = self.config_entry.async_create_background_task(
+                self.hass, self._recupera_storico(), f"{DOMAIN} storico {self.pdr[-4:]}"
+            )
+        return dati
+
+    async def _unisci(self, inizio: date | None, risultato: RisultatoLetture) -> DatiItalgas:
+        """Aggiunge le letture scaricate allo storico, lo salva e aggiorna le statistiche."""
         for lettura in risultato.letture:
             self._letture[(lettura.data, lettura.matricola)] = lettura
-        self._mancanti = risultato.mancanti
+        # i periodi mancanti dentro l'intervallo appena scaricato sono stati riprovati
+        precedenti = {m for m in self._mancanti if inizio is not None and m[1] < inizio}
+        self._mancanti = sorted(precedenti | set(risultato.mancanti))
         if risultato.data_minima:
             self._data_minima = risultato.data_minima
         self._ultimo_aggiornamento = dt_util.utcnow()
         await self._salva()
-
         dati = self._dati()
         self._importa_statistiche(dati.letture)
         return dati
+
+    async def _recupera_storico(self) -> None:
+        """Scarica in background lo storico completo dopo la prima configurazione."""
+        try:
+            risultato = await self.client.scarica_letture(self.pdr, None, dt_util.now().date())
+        except ItalgasError as err:
+            _LOGGER.warning(
+                "Storico MyItalgas non ancora scaricato, nuovo tentativo al prossimo "
+                "aggiornamento: %s",
+                err,
+            )
+            return
+        finally:
+            self._recupero = None
+        self._storico_completo = True
+        self.async_set_updated_data(await self._unisci(None, risultato))
+        _LOGGER.debug("Storico completo scaricato: %d letture", len(self._letture))
 
     async def _salva(self) -> None:
         await self._store.async_save(
@@ -204,6 +246,7 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
                 "ultimo_aggiornamento": (
                     self._ultimo_aggiornamento.isoformat() if self._ultimo_aggiornamento else None
                 ),
+                "storico_completo": self._storico_completo,
             }
         )
 

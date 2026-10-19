@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import date
 
@@ -259,3 +260,68 @@ async def test_storico_che_parte_oltre_la_fine(sessione, portale: PortaleFinto) 
     assert risultato.letture == []
     assert risultato.data_minima == date(2026, 10, 25)
     assert len(portale.ricerche) == 1
+
+
+async def test_scaricamenti_contemporanei(sessione, portale: PortaleFinto) -> None:
+    """Due scaricamenti in parallelo sulla stessa sessione non si mescolano."""
+    portale.forniture.append(
+        FornituraFinta(
+            pdr="98765432109876",
+            letture=[LetturaFinta(date(2026, 9, 30), 42.0, matricola="MIT2")],
+        )
+    )
+    client = _client(sessione, portale)
+    completo, altro = await asyncio.gather(
+        client.scarica_letture(PDR, None, OGGI),
+        client.scarica_letture("98765432109876", date(2026, 1, 1), OGGI),
+    )
+    assert len(completo.letture) == 47
+    assert {x.matricola for x in completo.letture} == {"MIT0000000000001"}
+    assert [(x.valore, x.matricola) for x in altro.letture] == [(42.0, "MIT2")]
+
+
+async def test_numero_minimo_di_richieste(sessione, portale: PortaleFinto) -> None:
+    """Il portale è lento: nessuna richiesta superflua."""
+    client = _client(sessione, portale)
+    await client.scarica_letture(PDR, date(2026, 9, 1), OGGI)
+    assert portale.richieste == [
+        "GET /clienti/login.action",
+        "POST /clienti/login.action",
+        "GET /clienti/elencoLettForn.action",
+        "GET /clienti/elencoLetture.action",
+        "POST /clienti/ricercaLetture.action",
+    ]
+    # aggiornamento successivo: la pagina letture si apre direttamente
+    portale.richieste.clear()
+    await client.scarica_letture(PDR, date(2026, 9, 1), OGGI)
+    assert portale.richieste == [
+        "GET /clienti/elencoLetture.action",
+        "POST /clienti/ricercaLetture.action",
+    ]
+
+
+async def test_sessione_inattiva(sessione, portale: PortaleFinto) -> None:
+    """Dopo un lungo periodo di inattività si rifà subito l'accesso."""
+    client = _client(sessione, portale)
+    await client.scarica_letture(PDR, date(2026, 9, 1), OGGI)
+    portale.scadi_sessioni()
+    portale.richieste.clear()
+    client._ultima_attivita -= 3600
+    risultato = await client.scarica_letture(PDR, date(2026, 9, 1), OGGI)
+    assert len(risultato.letture) == 1
+    assert portale.richieste == [
+        "GET /clienti/login.action",
+        "POST /clienti/login.action",
+        "GET /clienti/elencoLetture.action",
+        "POST /clienti/ricercaLetture.action",
+    ]
+
+
+async def test_link_fornitura_cambiato(sessione, portale: PortaleFinto) -> None:
+    """Se il link salvato non porta più alla fornitura si riparte dall'elenco."""
+    client = _client(sessione, portale)
+    await client.scarica_letture(PDR, date(2026, 9, 1), OGGI)
+    portale.forniture[0].id = "NUOVO-ID"
+    risultato = await client.scarica_letture(PDR, date(2026, 9, 1), OGGI)
+    assert [x.valore for x in risultato.letture] == [1812.0]
+    assert portale.richieste.count("GET /clienti/elencoLettForn.action") == 2

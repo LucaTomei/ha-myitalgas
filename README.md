@@ -106,8 +106,12 @@ Se non hai ancora HACS, segui la [guida ufficiale di installazione](https://hacs
 2. Inserisci **username** e **password** di clienti.italgas.it e conferma.
 3. Se il profilo ha più forniture, scegli quella da aggiungere. Per aggiungere le altre
    ripeti la procedura: l'integrazione propone solo quelle non ancora configurate.
-4. Al primo avvio viene scaricato tutto lo storico: il portale è lento e servono **circa
-   1–2 minuti**. Al termine trovi il dispositivo **Gas *nome fornitura*** con i suoi sensori.
+4. In pochi secondi la configurazione è completata e trovi il dispositivo
+   **Gas *nome fornitura*** con i suoi sensori, già valorizzati con le ultime letture.
+   Lo storico completo viene scaricato subito dopo, in background (il portale è lento:
+   circa un minuto); quando è pronto, l'attributo *Storico completo scaricato* del
+   sensore *Ultimo aggiornamento riuscito* diventa `true` e lo storico compare nel
+   pannello Energia.
 
 Se il portale rifiuta la password (ad esempio perché l'hai cambiata), Home Assistant ti
 mostra una notifica per inserire le nuove credenziali. Puoi cambiarle anche quando vuoi
@@ -157,7 +161,7 @@ Ogni fornitura crea un dispositivo **Gas *nome fornitura*** con:
 | Media giornaliera | m³/d | Consumo medio al giorno nell'ultimo periodo | dal, al, giorni |
 | Consumo anno corrente | m³ | Somma dei periodi che terminano nell'anno in corso | anno |
 | Consumo anno precedente | m³ | Come sopra, per l'anno precedente | anno |
-| Ultimo aggiornamento riuscito | data e ora | Diagnostica: ultimo scaricamento andato a buon fine | periodi non scaricati |
+| Ultimo aggiornamento riuscito | data e ora | Diagnostica: ultimo scaricamento andato a buon fine | storico completo scaricato, periodi non scaricati |
 
 Inoltre vengono create le statistiche a lungo termine **MyItalgas *nome fornitura*
 consumo gas** (m³) e, se hai indicato un prezzo, **MyItalgas *nome fornitura* costo gas** (€).
@@ -189,10 +193,11 @@ controllali in *Impostazioni → Dispositivi e servizi → Entità*.
 
 - L'integrazione accede a clienti.italgas.it come faresti tu dal browser e legge le
   letture dalla pagina *Le mie letture*.
-- **Primo avvio**: scarica tutto lo storico disponibile (il portale lo conserva da quando
-  la fornitura è visibile, di solito dall'attivazione del contatore elettronico). Il
-  portale va in errore su intervalli lunghi, quindi lo storico viene letto a blocchi di
-  un anno.
+- **Primo avvio**: scarica subito le letture degli ultimi mesi, poi in background tutto
+  lo storico disponibile (il portale lo conserva da quando la fornitura è visibile, di
+  solito dall'attivazione del contatore elettronico). Il portale va in errore su
+  intervalli lunghi, quindi lo storico viene letto a blocchi di un anno. Se il recupero
+  dello storico non riesce, viene ritentato da solo all'aggiornamento successivo.
 - **Aggiornamenti successivi**: ogni 12 ore (modificabile) riscarica solo gli ultimi 90
   giorni, così recepisce anche eventuali rettifiche del distributore.
 - Lo storico è salvato in Home Assistant: dopo un riavvio non viene riscaricato e i
@@ -233,7 +238,10 @@ Per segnalare un problema:
 ## Aggiornamento e rimozione
 
 - **Aggiornamento**: HACS segnala le nuove versioni; clicca **Aggiorna** e riavvia Home
-  Assistant.
+  Assistant. Lo storico già scaricato e la configurazione restano.
+- **Aggiornamento immediato**: le letture vengono controllate da sole; per forzare un
+  controllo usa l'azione `homeassistant.update_entity` su uno dei sensori, oppure
+  **⋮ → Ricarica** sulla scheda dell'integrazione.
 - **Rimozione**: *Impostazioni → Dispositivi e servizi → MyItalgas → ⋮ → Elimina*. Lo
   storico salvato dall'integrazione viene cancellato; le statistiche già importate restano
   nel database di Home Assistant (togli la fonte dal pannello Energia se non ti servono
@@ -258,9 +266,11 @@ Per pubblicare una nuova versione:
 scripts/rilascia.sh 1.1.0
 ```
 
-Lo script aggiorna la versione nel manifest, crea il commit e il tag `v1.1.0` e li invia
-a GitHub. Il tag avvia il workflow *Rilascio*: esegue hassfest, la validazione HACS, lint
-e test, poi crea la release con le note generate dai commit e allega `myitalgas.zip`.
+Prima aggiungi in [CHANGELOG.md](CHANGELOG.md) la sezione della nuova versione. Lo
+script aggiorna la versione nel manifest, crea il commit e il tag `v1.1.0` e li invia a
+GitHub. Il tag avvia il workflow *Rilascio*: esegue hassfest, la validazione HACS, lint
+e test (sulla versione minima e sull'ultima di Home Assistant), poi crea la release con
+le note prese dal changelog e allega `myitalgas.zip`.
 Se un controllo fallisce la release non viene creata: corretto il problema, basta
 rilanciare lo script con la stessa versione.
 

@@ -55,9 +55,10 @@ def _stato(hass: HomeAssistant, chiave: str):
 
 
 async def _avvia(hass: HomeAssistant, **opzioni) -> MockConfigEntry:
+    """Configura la fornitura e attende anche il recupero dello storico in background."""
     entry = crea_entry(hass, **opzioni)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.state is ConfigEntryState.LOADED
     return entry
 
@@ -324,9 +325,11 @@ async def test_storico_salvato_illeggibile(
         "data": {"letture": [{"data": "non una data", "valore": 1}]},
     }
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert _stato(hass, "lettura").state == "1812.0"
-    assert portale.ricerche[0][0] == date(2000, 1, 1)
+    # storico ignorato: viene riscaricato tutto
+    assert date(2000, 1, 1) in [da for da, _ in portale.ricerche]
+    assert len(await _statistiche(hass)) == 47
 
 
 async def test_periodi_non_scaricati(
@@ -400,3 +403,101 @@ async def test_scaricamento_entita(hass: HomeAssistant, portale: PortaleFinto) -
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_primo_avvio_rapido(hass: HomeAssistant, portale: PortaleFinto) -> None:
+    """La configurazione si chiude con le letture recenti; lo storico arriva in background."""
+    entry = crea_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    # subito: solo gli ultimi 120 giorni, sensori già validi
+    assert portale.ricerche[0] == (date(2026, 6, 21), date(2026, 10, 19))
+    assert _stato(hass, "lettura").state == "1812.0"
+    assert _stato(hass, "consumo_periodo").state == "9.0"
+
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert date(2000, 1, 1) in [da for da, _ in portale.ricerche]
+    assert _stato(hass, "consumo_anno_precedente").state == "473.0"
+    assert _stato(hass, "ultimo_aggiornamento").attributes["storico_completo"] is True
+    assert len(await _statistiche(hass)) == 47
+    assert entry.runtime_data.last_update_success is True
+
+
+async def test_storico_in_background_non_riuscito(
+    hass: HomeAssistant, portale: PortaleFinto, freezer: FrozenDateTimeFactory
+) -> None:
+    """Se il recupero dello storico fallisce, viene ritentato all'aggiornamento successivo."""
+    portale.errore_sistema = lambda da, _a: da < date(2026, 1, 1)
+    entry = await _avvia(hass)
+    assert _stato(hass, "lettura").state == "1812.0"
+    assert _stato(hass, "ultimo_aggiornamento").attributes["storico_completo"] is False
+    assert _stato(hass, "consumo_anno_precedente").state == "unknown"
+
+    portale.errore_sistema = lambda _da, _a: False
+    freezer.tick(timedelta(hours=12, minutes=1))
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _stato(hass, "ultimo_aggiornamento").attributes["storico_completo"] is True
+    assert _stato(hass, "consumo_anno_precedente").state == "473.0"
+    assert len(await _statistiche(hass)) == 47
+
+
+async def test_migrazione_dalla_versione_1_0_0(
+    hass: HomeAssistant, portale: PortaleFinto, hass_storage: dict
+) -> None:
+    """Lo storico salvato dalla 1.0.0 (sempre completo) non viene riscaricato."""
+    entry = crea_entry(hass)
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": f"{DOMAIN}.{entry.entry_id}",
+        "data": {
+            "letture": [
+                {
+                    "data": x.data.isoformat(),
+                    "valore": x.valore,
+                    "tipologia": x.tipologia,
+                    "matricola": x.matricola,
+                }
+                for x in letture_mensili()
+            ],
+            "mancanti": [],
+            "data_minima": "2022-12-01",
+            "ultimo_aggiornamento": "2026-10-18T10:00:00+00:00",
+        },
+    }
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert portale.ricerche == [(date(2026, 7, 2), date(2026, 10, 19))]
+    assert _stato(hass, "ultimo_aggiornamento").attributes["storico_completo"] is True
+
+
+async def test_scaricamento_durante_il_recupero(hass: HomeAssistant, portale: PortaleFinto) -> None:
+    """Rimuovere o ricaricare l'integrazione mentre scarica lo storico non lascia task appesi."""
+    entry = crea_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data._recupero is not None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_pdr_non_compare_nei_log(
+    hass: HomeAssistant, portale: PortaleFinto, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Il PDR non finisce nei log dell'integrazione, che gli utenti allegano alle segnalazioni."""
+    caplog.set_level("DEBUG", logger="custom_components.myitalgas")
+    caplog.set_level("DEBUG", logger="homeassistant.helpers.update_coordinator")
+    await _avvia(hass)
+    righe = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name.startswith("custom_components.myitalgas")
+        or (
+            r.name.startswith("homeassistant.helpers.update_coordinator")
+            and "myitalgas" in r.getMessage()
+        )
+    ]
+    assert any("Finished fetching myitalgas Casa" in r for r in righe)
+    assert not [r for r in righe if PDR in r]

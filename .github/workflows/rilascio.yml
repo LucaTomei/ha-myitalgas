@@ -40,6 +40,20 @@ jobs:
             exit 1
           fi
 
+      - name: Note di rilascio
+        run: |
+          VERSIONE="${TAG#v}"
+          awk -v v="$VERSIONE" '
+            index($0, "## [" v "]") == 1 { dentro = 1; next }
+            dentro && /^## \[/ { exit }
+            dentro { print }
+          ' CHANGELOG.md > note.md
+          if ! grep -q '[^[:space:]]' note.md; then
+            echo "::error::Manca la voce [$VERSIONE] in CHANGELOG.md"
+            exit 1
+          fi
+          cat note.md
+
       - name: Crea il pacchetto
         run: |
           cd custom_components/myitalgas
@@ -51,5 +65,5 @@ jobs:
           gh release create "$TAG" myitalgas.zip \
             --verify-tag \
             --title "$TAG" \
-            --generate-notes \
+            --notes-file note.md \
             --latest

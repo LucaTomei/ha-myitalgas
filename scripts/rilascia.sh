@@ -3,10 +3,11 @@
 #
 #   scripts/rilascia.sh 1.2.0
 #
-# Aggiorna la versione nel manifest, crea il commit e il tag vX.Y.Z e li invia a
-# GitHub. Il push del tag avvia il workflow "Rilascio", che esegue tutti i
-# controlli, crea la release con le note generate dai commit e allega
-# myitalgas.zip. Se un controllo fallisce la release non viene creata: corretto
+# Prima di lanciarlo aggiungi in CHANGELOG.md la sezione "## [X.Y.Z] - data".
+# Lo script aggiorna la versione nel manifest, crea il commit e il tag vX.Y.Z e
+# li invia a GitHub. Il push del tag avvia il workflow "Rilascio", che esegue
+# tutti i controlli, crea la release con le note prese da CHANGELOG.md e
+# allega myitalgas.zip. Se un controllo fallisce la release non viene creata: corretto
 # il problema, rilancia lo script con la stessa versione.
 set -euo pipefail
 
@@ -18,6 +19,7 @@ TAG="v$VERSIONE"
 MANIFEST="custom_components/myitalgas/manifest.json"
 
 cd "$(git rev-parse --show-toplevel)"
+grep -q "^## \[$VERSIONE\]" CHANGELOG.md || errore "aggiungi prima la sezione [$VERSIONE] in CHANGELOG.md"
 [[ "$(git branch --show-current)" == "main" ]] || errore "passa al branch main"
 [[ -z "$(git status --porcelain)" ]] || errore "ci sono modifiche non salvate in un commit"
 git pull --ff-only --quiet

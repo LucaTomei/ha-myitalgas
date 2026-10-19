@@ -49,4 +49,5 @@ async def async_get_config_entry_diagnostics(
         if dati and dati.ultimo_aggiornamento
         else None,
         "ultimo_aggiornamento_riuscito": entry.runtime_data.last_update_success,
+        "storico_completo": dati.storico_completo if dati else None,
     }

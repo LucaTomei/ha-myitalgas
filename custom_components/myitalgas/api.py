@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 import logging
+import time
 from typing import Any
 from urllib.parse import urljoin
 
@@ -38,6 +40,9 @@ INIZIO_STORICO = date(2000, 1, 1)
 _MAX_ERRORI_DI_FILA = 6
 # nuovi accessi consecutivi senza riuscire a completare nemmeno una ricerca
 _MAX_NUOVI_ACCESSI = 2
+# Dopo questo periodo di inattività la sessione del portale si considera scaduta:
+# si rifà subito l'accesso invece di scoprirlo con un redirect (il portale è lento).
+_INATTIVITA_MAX = 15 * 60
 _PAROLE_CREDENZIALI = ("password", "username", "credenzial", "utente")
 
 
@@ -98,14 +103,33 @@ class ItalgasClient:
         self._password = password
         base = base_url or PORTALE_URL
         self._base = base if base.endswith("/") else base + "/"
+        # il portale tiene in sessione la fornitura e la ricerca correnti:
+        # le operazioni sulla stessa sessione vanno eseguite una alla volta
+        self._lock = asyncio.Lock()
+        self._autenticato = False
+        self._ultima_attivita = 0.0
+        # link alla pagina letture di ogni PDR (stabile tra una sessione e l'altra)
+        self._link_pdr: dict[str, str] = {}
 
     # ------------------------------------------------------------------ HTTP
 
     async def _richiesta(
-        self, metodo: str, url: str, dati: dict[str, str] | None = None
+        self,
+        metodo: str,
+        url: str,
+        dati: dict[str, str] | None = None,
+        *,
+        segui_redirect: bool = True,
     ) -> tuple[str, str]:
-        """Esegue una richiesta e ritorna (url finale, testo della risposta)."""
-        kwargs: dict[str, Any] = {"headers": _INTESTAZIONI, "timeout": _TIMEOUT}
+        """Esegue una richiesta e ritorna (url finale, testo della risposta).
+
+        Con segui_redirect=False un redirect ritorna (destinazione, "").
+        """
+        kwargs: dict[str, Any] = {
+            "headers": _INTESTAZIONI,
+            "timeout": _TIMEOUT,
+            "allow_redirects": segui_redirect,
+        }
         if dati is not None:
             # come il browser: multipart/form-data
             kwargs["data"] = aiohttp.FormData(dati, default_to_multipart=True)
@@ -121,6 +145,9 @@ class ItalgasClient:
                     raise ItalgasPortalError(
                         f"il portale ha risposto con errore HTTP {risposta.status}"
                     )
+                self._ultima_attivita = time.monotonic()
+                if not segui_redirect and 300 <= risposta.status < 400:
+                    return urljoin(url, risposta.headers.get("Location", "")), ""
                 return str(risposta.url), testo
         except (aiohttp.ClientError, TimeoutError) as err:
             raise ItalgasConnectionError(
@@ -134,18 +161,29 @@ class ItalgasClient:
 
     async def login(self) -> None:
         """Accede al portale con le credenziali configurate."""
+        self._autenticato = False
         url, html = await self._richiesta("GET", self._url("login.action"))
         if parser.e_autenticato(html):
+            self._autenticato = True
             return
         radice = parser.analizza(html)
         form = parser.modulo(radice, "headerLogin")
         if form is None or "username" not in form.campi or "password" not in form.campi:
             raise ItalgasPortalError("modulo di accesso del portale non riconosciuto")
         dati = {**form.campi, "username": self._username, "password": self._password}
+        # Ad accesso riuscito il portale rimanda alla home: basta il redirect,
+        # senza scaricare la pagina (la più pesante del portale).
         url, html = await self._richiesta(
-            "POST", self._url(form.azione or "login.action", url), dati
+            "POST", self._url(form.azione or "login.action", url), dati, segui_redirect=False
         )
+        if not html and "login.action" not in url:
+            self._autenticato = True
+            _LOGGER.debug("Accesso al portale MyItalgas effettuato")
+            return
+        if not html:
+            url, html = await self._richiesta("GET", url)
         if parser.e_autenticato(html):
+            self._autenticato = True
             _LOGGER.debug("Accesso al portale MyItalgas effettuato")
             return
         radice = parser.analizza(html)
@@ -160,6 +198,8 @@ class ItalgasClient:
 
     async def _pagina_protetta(self, url: str) -> tuple[str, str]:
         """Apre una pagina riservata, rifacendo l'accesso se la sessione è scaduta."""
+        if not self._autenticato or time.monotonic() - self._ultima_attivita > _INATTIVITA_MAX:
+            await self.login()
         url_finale, html = await self._richiesta("GET", url)
         if parser.e_autenticato(html):
             return url_finale, html
@@ -173,18 +213,30 @@ class ItalgasClient:
 
     async def forniture(self) -> list[Fornitura]:
         """Forniture (PDR) associate al profilo."""
+        async with self._lock:
+            return await self._forniture()
+
+    async def _forniture(self) -> list[Fornitura]:
         _, html = await self._pagina_protetta(self._url("elencoLettForn.action"))
         return parser.forniture(parser.analizza(html))
 
     async def _apri_pdr(self, pdr: str) -> tuple[str, Nodo]:
         """Apre la pagina delle letture del PDR. Ritorna (url, pagina)."""
-        fornitura = next((f for f in await self.forniture() if f.pdr == pdr), None)
+        if link := self._link_pdr.get(pdr):
+            url, html = await self._pagina_protetta(self._url(link))
+            radice = parser.analizza(html)
+            # la pagina riporta il PDR: così si è certi che il link sia ancora quello giusto
+            if pdr in html and parser.modulo(radice, "ricercaLetture") is not None:
+                return url, radice
+            del self._link_pdr[pdr]
+        fornitura = next((f for f in await self._forniture() if f.pdr == pdr), None)
         if fornitura is None:
             raise ItalgasPdrNotFoundError(f"il PDR {pdr} non è associato al profilo MyItalgas")
         url, html = await self._pagina_protetta(self._url(fornitura.link))
         radice = parser.analizza(html)
         if parser.modulo(radice, "ricercaLetture") is None:
             raise ItalgasPortalError("pagina delle letture non riconosciuta")
+        self._link_pdr[pdr] = fornitura.link
         return url, radice
 
     async def _cerca(
@@ -238,6 +290,10 @@ class ItalgasClient:
 
     async def scarica_letture(self, pdr: str, inizio: date | None, fine: date) -> RisultatoLetture:
         """Scarica le letture del PDR tra `inizio` (None = tutto lo storico) e `fine`."""
+        async with self._lock:
+            return await self._scarica_letture(pdr, inizio, fine)
+
+    async def _scarica_letture(self, pdr: str, inizio: date | None, fine: date) -> RisultatoLetture:
         url, pagina = await self._apri_pdr(pdr)
         trovate: dict[tuple[date, str], Lettura] = {}
         mancanti: list[tuple[date, date]] = []

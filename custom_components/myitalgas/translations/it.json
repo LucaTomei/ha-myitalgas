@@ -155,6 +155,9 @@
         "state_attributes": {
           "periodi_non_scaricati": {
             "name": "Periodi non scaricati"
+          },
+          "storico_completo": {
+            "name": "Storico completo scaricato"
           }
         }
       }
