@@ -2,6 +2,41 @@
 
 Tutte le modifiche rilevanti di MyItalgas per Home Assistant.
 
+## [1.2.0] - 2026-10-19
+
+### Novità
+
+- **Periodi tariffari** al posto del prezzo unico: ognuno ha una data di decorrenza, tre
+  prezzi variabili per gli scaglioni annui (fino a 120 Smc, da 121 a 480, oltre 480) e
+  una quota fissa mensile, tutti IVA inclusa. Si aggiungono e modificano dalla pagina
+  dell'integrazione. Cambiare prezzo non ricalcola più lo storico con il prezzo nuovo.
+- **Costi calcolati come in bolletta**: consumo convertito in Smc con il coefficiente C,
+  prezzo del periodo in vigore e dello scaglione raggiunto dal 1° gennaio (con divisione
+  pro quota quando si attraversa una soglia o si cambia anno), più le quote fisse
+  ripartite giorno per giorno.
+- **Consumi distribuiti sui giorni** nel pannello Energia (predefinito): niente più picco
+  nel giorno della lettura. In alternativa distribuzione in base ai gradi giorno di un
+  sensore di temperatura esterna, oppure tutto nel giorno della lettura come prima.
+- **Statistica dei consumi in Smc** (opzione): totali uguali agli Smc della bolletta.
+- Nuovi sensori **Consumo anno corrente (Smc)**, **Costo stimato anno corrente** e
+  **Prezzo marginale attuale**.
+- **Riparazioni**: se il coefficiente C è ancora quello predefinito compare un promemoria
+  da cui impostarlo direttamente.
+
+### Miglioramenti
+
+- I consumi annui dividono pro quota i periodi a cavallo di due anni.
+- Cambiando la distribuzione le statistiche vengono ricalcolate da capo, senza lasciare
+  punti con valori vecchi.
+- README: nuova guida "Come calcolare il prezzo".
+
+### Aggiornamento dalla 1.1
+
+- Il prezzo unico impostato nelle opzioni diventa automaticamente un periodo tariffario
+  valido da sempre, con lo stesso prezzo per i tre scaglioni e quota fissa zero.
+  Aggiornalo con i prezzi della bolletta per avere costi più precisi.
+- Le statistiche vengono ricalcolate con la distribuzione giornaliera al primo avvio.
+
 ## [1.1.1] - 2026-10-19
 
 ### Correzioni

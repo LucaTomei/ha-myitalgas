@@ -31,6 +31,8 @@ Supervised).
 - [Installazione manuale](#installazione-manuale)
 - [Configurazione](#configurazione)
 - [Opzioni](#opzioni)
+- [Periodi tariffari](#periodi-tariffari)
+- [Come calcolare il prezzo](#come-calcolare-il-prezzo)
 - [Pannello Energia](#pannello-energia)
 - [Entità](#entità)
 - [Come funziona](#come-funziona)
@@ -46,11 +48,14 @@ Supervised).
 
 - **Lettura del contatore** in m³, utilizzabile anche nelle automazioni.
 - **Consumo dell'ultimo periodo** in m³ e in Smc (standard metri cubi, quelli della bolletta).
-- **Media giornaliera**, **consumo dell'anno in corso** e **dell'anno precedente**.
+- **Media giornaliera**, **consumo dell'anno in corso** (in m³ e Smc) e **dell'anno
+  precedente**, con i periodi a cavallo di due anni divisi pro quota.
 - **Storico completo nel pannello Energia**: al primo avvio vengono scaricate tutte le
-  letture disponibili sul portale; ogni consumo compare nel giorno a cui si riferisce,
-  non nel momento in cui Home Assistant lo scopre.
-- **Costi stimati** nel pannello Energia, se indichi il prezzo medio del gas.
+  letture disponibili sul portale. Il consumo tra due letture è distribuito sui singoli
+  giorni (in modo uniforme oppure in base alla temperatura esterna), invece di comparire
+  tutto nel giorno della lettura.
+- **Costi stimati come in bolletta**: prezzi con data di validità, scaglioni annui
+  (120 e 480 Smc) e quote fisse; costo stimato dell'anno e prezzo dello scaglione attuale.
 - **Più forniture**: se il tuo profilo ha più PDR puoi aggiungerli tutti.
 - **Robustezza**: sessione scaduta, errori temporanei del portale, password cambiata,
   sostituzione del contatore e rettifiche delle letture sono gestiti in automatico.
@@ -124,8 +129,96 @@ da **⋮ → Riconfigura** sulla scheda dell'integrazione.
 | Opzione | Predefinito | Descrizione |
 |---|---|---|
 | Intervallo di aggiornamento | 12 h | Ogni quanto controllare se ci sono letture nuove (1–168 ore). I contatori elettronici vengono letti circa una volta al mese, a fine mese: non serve controllare più spesso. |
-| Coefficiente di conversione (m³ → Smc) | 1 | Il **coefficiente C** della tua bolletta (dipende dal comune: altitudine e zona climatica, tipicamente tra 0,95 e 1,02). Serve a calcolare i consumi in Smc. |
-| Prezzo medio del gas (€/Smc) | 0 (disattivato) | Facoltativo: prezzo medio per Smc, **tutto compreso** (totale bolletta diviso Smc fatturati). Se impostato, viene creata una statistica dei costi per il pannello Energia. Lo stesso prezzo viene applicato a tutto lo storico: è una stima. |
+| Coefficiente C (conversione m³ → Smc) | 1 | Il **coefficiente C** della tua bolletta (dipende dal comune: altitudine e zona climatica, di solito tra 0,95 e 1,02). Converte i m³ letti dal contatore negli Smc su cui si paga. Finché resta 1, in **Impostazioni → Riparazioni** trovi un promemoria da cui puoi impostarlo direttamente. |
+| Distribuzione dei consumi | Uniforme | Come distribuire nel pannello Energia il consumo tra due letture: **uniforme** sui giorni, **in base ai gradi giorno** (serve un sensore di temperatura esterna) oppure **tutto nel giorno della lettura**. |
+| Sensore della temperatura esterna | – | Solo per la distribuzione sui gradi giorno: un sensore `device_class: temperature` con statistiche a lungo termine (`state_class: measurement`). |
+| Statistica dei consumi in Smc | No | Esporta nel pannello Energia i volumi già moltiplicati per il coefficiente C, così i totali coincidono con gli Smc della bolletta. |
+
+**Distribuzione sui gradi giorno.** Dal consumo dei mesi senza riscaldamento si stima il
+consumo di base (cottura, acqua calda), uguale tutti i giorni; il resto è distribuito in
+proporzione ai gradi giorno, cioè a quanto la temperatura media del giorno è sotto i
+20 °C. I giorni più freddi ricevono più consumo, il totale di ogni periodo resta quello
+letto dal contatore. Per i periodi senza temperature registrate (ad esempio prima che il
+sensore esistesse) si usa la distribuzione uniforme.
+
+Cambiando la distribuzione le statistiche vengono ricalcolate da capo, senza lasciare
+valori vecchi.
+
+## Periodi tariffari
+
+I costi si calcolano a partire dai **periodi tariffari**: ognuno indica i prezzi in vigore
+da una certa data fino al periodo successivo. Così quando cambia l'offerta o il prezzo
+della materia prima aggiungi un periodo nuovo, e lo storico già passato mantiene i prezzi
+di allora.
+
+**Impostazioni → Dispositivi e servizi → MyItalgas →** pulsante **Aggiungi periodo
+tariffario** (per modificarne uno esistente usa i tre puntini accanto al periodo).
+
+| Campo | Descrizione |
+|---|---|
+| In vigore dal | Data da cui valgono i prezzi. |
+| Prezzo variabile – fino a 120 Smc/anno | €/Smc, IVA e imposte incluse, per i primi 120 Smc dell'anno solare. |
+| Prezzo variabile – da 121 a 480 Smc/anno | Se lo lasci vuoto vale il prezzo precedente. |
+| Prezzo variabile – oltre 480 Smc/anno | Se lo lasci vuoto vale il prezzo precedente. |
+| Quota fissa | €/mese, IVA inclusa: la somma delle quote fisse della bolletta. Viene ripartita giorno per giorno. |
+
+Come viene calcolato il costo:
+
+1. il consumo di ogni giorno (m³) è convertito in Smc con il coefficiente C;
+2. gli Smc si sommano dal 1° gennaio: il prezzo è quello dello scaglione in cui cade il
+   consumo, e un giorno che attraversa una soglia viene diviso pro quota tra i due
+   scaglioni; il 1° gennaio si riparte dal primo scaglione;
+3. si usa il periodo tariffario in vigore in quel giorno;
+4. si aggiunge la quota fissa del giorno (dodici mensilità divise sui giorni dell'anno).
+
+Prima della data del primo periodo tariffario i costi non vengono calcolati. Le bollette
+applicano gli scaglioni al periodo fatturato, riproporzionati sui giorni: la ripartizione
+tra i singoli mesi può quindi differire di poco da quella della bolletta.
+
+## Come calcolare il prezzo
+
+Il prezzo variabile è la **somma di tutte le voci al metro cubo**, più l'IVA.
+
+> ⚠️ **Non** dividere il totale della bolletta per gli Smc fatturati: il totale contiene
+> anche le quote fisse, che vanno indicate a parte nel campo *Quota fissa*.
+
+Le voci al metro cubo sono nel dettaglio della bolletta (o nella scheda dell'offerta):
+
+| Voce | Cosa contiene |
+|---|---|
+| Materia prima (spesa per la materia gas naturale) | Il prezzo del gas della tua offerta (fisso o indicizzato). |
+| Trasporto e gestione del contatore, quota variabile | Tariffa di rete stabilita da ARERA. |
+| Oneri di sistema, quota variabile | Stabiliti da ARERA. |
+| Accisa | Dipende dallo scaglione annuo; più bassa nelle regioni del Mezzogiorno. |
+| Addizionale regionale | Dipende dalla regione e dallo scaglione. |
+| IVA | Uso domestico: 10% fino a 480 Smc/anno, 22% oltre. |
+
+Esempio (valori **indicativi**: usa quelli della tua bolletta):
+
+| €/Smc | fino a 120 | da 121 a 480 | oltre 480 |
+|---|---:|---:|---:|
+| Materia prima | 0,450 | 0,450 | 0,450 |
+| Trasporto e gestione contatore | 0,100 | 0,100 | 0,100 |
+| Oneri di sistema | 0,030 | 0,030 | 0,030 |
+| Accisa (Centro-Nord) | 0,044 | 0,175 | 0,170 |
+| Addizionale regionale | 0,022 | 0,025 | 0,031 |
+| **Imponibile** | **0,646** | **0,780** | **0,781** |
+| IVA | 10% | 10% | 22% |
+| **Prezzo da inserire** | **0,711** | **0,858** | **0,953** |
+
+Per esempio, per il primo scaglione: (0,450 + 0,100 + 0,030 + 0,044 + 0,022) × 1,10 =
+0,646 × 1,10 = **0,711 €/Smc**.
+
+**Perché gli scaglioni 120 e 480.** Accisa e addizionale regionale crescono a scaglioni
+di consumo annuo (fino a 120 Smc, da 121 a 480, oltre 480; l'accisa ha un ulteriore
+scaglione oltre 1.560 Smc, raro nelle abitazioni, per il quale puoi usare il terzo prezzo),
+e l'IVA passa dal 10% al 22% oltre i 480 Smc l'anno. Per questo lo stesso metro cubo costa
+di più man mano che i consumi dell'anno crescono, e il prezzo torna a scendere il
+1° gennaio.
+
+**Quota fissa**, sempre con valori indicativi: commercializzazione 8,00 €/mese + quota
+fissa di trasporto 5,00 €/mese + oneri fissi 0,50 €/mese = 13,50 €/mese, × 1,10 di IVA =
+**14,85 €/mese**.
 
 ## Pannello Energia
 
@@ -137,16 +230,15 @@ da **⋮ → Riconfigura** sulla scheda dell'integrazione.
    > Scegli questa statistica e **non** il sensore *Lettura contatore*: la statistica
    > contiene tutto lo storico e mette ogni consumo nel giorno giusto; il sensore
    > registrerebbe solo i consumi futuri, nel momento in cui vengono scoperti.
-4. Per i costi:
-   - se hai impostato il **prezzo medio** nelle opzioni, scegli l'opzione che usa
-     un'entità con i **costi totali** e seleziona **MyItalgas *nome fornitura* costo gas**;
-   - altrimenti lascia *Non tenere traccia dei costi*. Il pannello Energia non permette
-     di indicare un prezzo fisso per le statistiche importate: per questo esiste
-     l'opzione del prezzo medio.
-5. Salva. Lo storico compare subito nelle viste per giorno, settimana, mese e anno.
-
-Le teleletture arrivano una volta al mese: nel pannello vedrai quindi un consumo per
-ciascun mese, collocato nel giorno della lettura (di solito l'ultimo del mese).
+4. Lascia vuoto il campo *Portata del gas*.
+5. Per i costi:
+   - se hai aggiunto almeno un [periodo tariffario](#periodi-tariffari), scegli **Usa
+     un'entità che tiene traccia dei costi totali** e seleziona **MyItalgas *nome
+     fornitura* costo gas**;
+   - altrimenti scegli *Non tenere traccia dei costi* (potrai cambiarlo in seguito). Il
+     pannello Energia non permette di indicare un prezzo fisso per le statistiche
+     importate: per questo i costi si configurano con i periodi tariffari.
+6. Salva. Lo storico compare subito nelle viste per giorno, settimana, mese e anno.
 
 ## Entità
 
@@ -159,12 +251,16 @@ Ogni fornitura crea un dispositivo **Gas *nome fornitura*** con:
 | Consumo ultimo periodo | m³ | Differenza tra le ultime due letture | dal, al, giorni |
 | Consumo ultimo periodo (Smc) | Smc | Come sopra, moltiplicato per il coefficiente C | dal, al, giorni |
 | Media giornaliera | m³/d | Consumo medio al giorno nell'ultimo periodo | dal, al, giorni |
-| Consumo anno corrente | m³ | Somma dei periodi che terminano nell'anno in corso | anno |
-| Consumo anno precedente | m³ | Come sopra, per l'anno precedente | anno |
+| Consumo anno corrente | m³ | Consumo dal 1° gennaio all'ultima lettura (i periodi a cavallo dell'anno sono divisi pro quota) | anno |
+| Consumo anno corrente (Smc) | Smc | Come sopra, moltiplicato per il coefficiente C | anno |
+| Consumo anno precedente | m³ | Consumo dell'anno precedente | anno |
+| Costo stimato anno corrente | € | Costo dal 1° gennaio all'ultima lettura, quote fisse incluse (serve un periodo tariffario) | anno |
+| Prezzo marginale attuale | €/Smc | Prezzo del prossimo Smc: periodo tariffario in vigore e scaglione raggiunto quest'anno | scaglione, consumo dell'anno (Smc), periodo tariffario dal |
 | Ultimo aggiornamento riuscito | data e ora | Diagnostica: ultimo scaricamento andato a buon fine | storico completo scaricato, periodi non scaricati |
 
 Inoltre vengono create le statistiche a lungo termine **MyItalgas *nome fornitura*
-consumo gas** (m³) e, se hai indicato un prezzo, **MyItalgas *nome fornitura* costo gas** (€).
+consumo gas** (m³) e, se hai almeno un periodo tariffario, **MyItalgas *nome fornitura*
+costo gas** (€).
 
 Esempio di automazione: avviso quando arriva una nuova lettura.
 

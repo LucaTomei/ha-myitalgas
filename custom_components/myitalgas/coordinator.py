@@ -14,9 +14,12 @@ from homeassistant.components.recorder.models import (
     StatisticMeanType,
     StatisticMetaData,
 )
-from homeassistant.components.recorder.statistics import async_add_external_statistics
+from homeassistant.components.recorder.statistics import (
+    async_add_external_statistics,
+    statistics_during_period,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfVolume
+from homeassistant.const import UnitOfTemperature, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
@@ -32,20 +35,28 @@ from .api import (
     ItalgasPdrNotFoundError,
     RisultatoLetture,
 )
-from .calcoli import Periodo
+from .calcoli import Distribuzione, Giorno, Periodo, PuntoStatistica, Tariffa
 from .const import (
     COEFFICIENTE_DEFAULT,
     CONF_ALIAS,
     CONF_COEFFICIENTE,
+    CONF_DAL,
+    CONF_DISTRIBUZIONE,
     CONF_INTERVALLO_ORE,
     CONF_PDR,
-    CONF_PREZZO,
+    CONF_PREZZO_SC1,
+    CONF_PREZZO_SC2,
+    CONF_PREZZO_SC3,
+    CONF_QUOTA_FISSA,
+    CONF_SENSORE_TEMPERATURA,
+    CONF_STATISTICA_SMC,
+    DISTRIBUZIONE_DEFAULT,
     DOMAIN,
     GIORNI_PRIMO_AVVIO,
     GIORNI_RILETTURA,
     INTERVALLO_ORE_DEFAULT,
-    PREZZO_DEFAULT,
     STORAGE_VERSION,
+    SUBENTRY_TARIFFA,
 )
 from .parser import Lettura
 
@@ -54,12 +65,71 @@ _LOGGER = logging.getLogger(__name__)
 type ItalgasConfigEntry = ConfigEntry[ItalgasCoordinator]
 
 
+@dataclass(frozen=True, slots=True)
+class Impostazioni:
+    """Opzioni e periodi tariffari della fornitura."""
+
+    coefficiente: float
+    distribuzione: Distribuzione
+    sensore_temperatura: str | None
+    statistica_smc: bool
+    tariffe: list[Tariffa]
+
+    @classmethod
+    def da_entry(cls, entry: ConfigEntry) -> Impostazioni:
+        """Legge le impostazioni dalla config entry."""
+        opzioni = entry.options
+        try:
+            distribuzione = Distribuzione(opzioni.get(CONF_DISTRIBUZIONE, DISTRIBUZIONE_DEFAULT))
+        except ValueError:
+            distribuzione = Distribuzione(DISTRIBUZIONE_DEFAULT)
+        return cls(
+            coefficiente=float(opzioni.get(CONF_COEFFICIENTE, COEFFICIENTE_DEFAULT)),
+            distribuzione=distribuzione,
+            sensore_temperatura=opzioni.get(CONF_SENSORE_TEMPERATURA) or None,
+            statistica_smc=bool(opzioni.get(CONF_STATISTICA_SMC, False)),
+            tariffe=tariffe_da_entry(entry),
+        )
+
+
+def tariffa_da_dati(dati: dict[str, Any]) -> Tariffa:
+    """Periodo tariffario a partire dai dati di una sottovoce."""
+    sc1 = float(dati[CONF_PREZZO_SC1])
+    sc2 = dati.get(CONF_PREZZO_SC2)
+    sc3 = dati.get(CONF_PREZZO_SC3)
+    sc2 = sc1 if sc2 is None else float(sc2)
+    sc3 = sc2 if sc3 is None else float(sc3)
+    return Tariffa(
+        dal=date.fromisoformat(dati[CONF_DAL]),
+        prezzo_sc1=sc1,
+        prezzo_sc2=sc2,
+        prezzo_sc3=sc3,
+        quota_fissa=float(dati.get(CONF_QUOTA_FISSA) or 0.0),
+    )
+
+
+def tariffe_da_entry(entry: ConfigEntry) -> list[Tariffa]:
+    """Periodi tariffari configurati, in ordine di decorrenza."""
+    tariffe = []
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_TARIFFA:
+            continue
+        try:
+            tariffe.append(tariffa_da_dati(dict(subentry.data)))
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.warning("Periodo tariffario '%s' non valido, ignorato", subentry.title)
+    return sorted(tariffe, key=lambda t: t.dal)
+
+
 @dataclass(slots=True)
 class DatiItalgas:
     """Dati esposti alle entità."""
 
     letture: list[Lettura]
     periodi: list[Periodo]
+    giorni: list[Giorno] = field(default_factory=list)
+    tariffe: list[Tariffa] = field(default_factory=list)
+    coefficiente: float = COEFFICIENTE_DEFAULT
     mancanti: list[tuple[date, date]] = field(default_factory=list)
     ultimo_aggiornamento: datetime | None = None
     storico_completo: bool = False
@@ -108,6 +178,7 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
         )
         self.client = client
         self.pdr: str = entry.data[CONF_PDR]
+        self.impostazioni = Impostazioni.da_entry(entry)
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         )
@@ -116,12 +187,13 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
         self._data_minima: date | None = None
         self._ultimo_aggiornamento: datetime | None = None
         self._storico_completo = False
+        self._firma_statistiche: str | None = None
         self._recupero: asyncio.Task[None] | None = None
 
     async def _async_setup(self) -> None:
         """Carica lo storico salvato."""
-        if not self.config_entry.options.get(CONF_PREZZO, PREZZO_DEFAULT):
-            # prezzo non impostato (o tolto): niente statistica dei costi
+        if not self.impostazioni.tariffe:
+            # nessun periodo tariffario (o tutti rimossi): niente statistica dei costi
             get_instance(self.hass).async_clear_statistics([id_statistica_costo(self.pdr)])
         salvati = await self._store.async_load()
         if not salvati:
@@ -140,12 +212,14 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
                 self._ultimo_aggiornamento = dt_util.parse_datetime(ultimo)
             # la versione 1.0.0 scaricava sempre tutto lo storico al primo avvio
             self._storico_completo = bool(salvati.get("storico_completo", self._letture))
+            self._firma_statistiche = salvati.get("firma_statistiche")
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.warning("Storico salvato non leggibile, verrà riscaricato: %s", err)
             self._letture.clear()
             self._mancanti.clear()
             self._data_minima = None
             self._storico_completo = False
+            self._firma_statistiche = None
 
     def _inizio_ricerca(self, oggi: date) -> date:
         """Da quando scaricare: le ultime settimane e gli eventuali periodi mancanti."""
@@ -158,11 +232,45 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
             inizio = max(inizio, self._data_minima)
         return min(inizio, oggi)
 
-    def _dati(self) -> DatiItalgas:
+    async def _temperature(self, letture: list[Lettura]) -> dict[date, float] | None:
+        """Temperature medie giornaliere (°C) dalle statistiche del sensore scelto."""
+        imp = self.impostazioni
+        if imp.distribuzione is not Distribuzione.GRADI_GIORNO or not imp.sensore_temperatura:
+            return None
+        if len(letture) < 2:
+            return {}
+        inizio = dt_util.start_of_local_day(letture[0].data)
+        fine = dt_util.start_of_local_day(letture[-1].data + timedelta(days=1))
+        righe = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            inizio,
+            fine,
+            {imp.sensore_temperatura},
+            "day",
+            {"temperature": UnitOfTemperature.CELSIUS},
+            {"mean"},
+        )
+        temperature = {
+            dt_util.as_local(dt_util.utc_from_timestamp(r["start"])).date(): r["mean"]
+            for r in righe.get(imp.sensore_temperatura, [])
+            if r.get("mean") is not None
+        }
+        _LOGGER.debug("Temperature disponibili per %d giorni", len(temperature))
+        return temperature
+
+    async def _calcola(self) -> DatiItalgas:
+        imp = self.impostazioni
         letture = calcoli.ordina(self._letture.values())
+        giorni = calcoli.calcola_giorni(
+            letture, imp.coefficiente, imp.tariffe, await self._temperature(letture)
+        )
         return DatiItalgas(
             letture=letture,
             periodi=calcoli.periodi(letture),
+            giorni=giorni,
+            tariffe=imp.tariffe,
+            coefficiente=imp.coefficiente,
             mancanti=list(self._mancanti),
             ultimo_aggiornamento=self._ultimo_aggiornamento,
             storico_completo=self._storico_completo,
@@ -189,7 +297,9 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
                 # Primo avvio con storico salvato: si mostrano i dati noti e si riprova
                 # al prossimo aggiornamento.
                 _LOGGER.warning("Aggiornamento MyItalgas non riuscito: %s", err)
-                return self._dati()
+                dati = await self._calcola()
+                await self._importa_statistiche(dati)
+                return dati
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="update_failed",
@@ -213,9 +323,9 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
         if risultato.data_minima:
             self._data_minima = risultato.data_minima
         self._ultimo_aggiornamento = dt_util.utcnow()
+        dati = await self._calcola()
+        await self._importa_statistiche(dati)
         await self._salva()
-        dati = self._dati()
-        self._importa_statistiche(dati.letture)
         return dati
 
     async def _recupera_storico(self) -> None:
@@ -247,45 +357,50 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
                     self._ultimo_aggiornamento.isoformat() if self._ultimo_aggiornamento else None
                 ),
                 "storico_completo": self._storico_completo,
+                "firma_statistiche": self._firma_statistiche,
             }
         )
 
-    def _importa_statistiche(self, letture: list[Lettura]) -> None:
-        """Statistica esterna con i consumi alla data reale di ogni lettura.
+    async def _importa_statistiche(self, dati: DatiItalgas) -> None:
+        """Statistiche esterne di consumi e costi per il pannello Energia.
 
-        È la fonte consigliata per il pannello Energia: i sensori registrano il
-        consumo solo quando Home Assistant scopre la lettura, la statistica lo
-        colloca nel giorno a cui si riferisce.
+        I consumi sono collocati nei giorni a cui si riferiscono (ripartiti tra due
+        letture, oppure tutti nel giorno della lettura). Se la disposizione dei punti
+        cambia, le statistiche vengono svuotate prima di reimportarle, così non restano
+        punti orfani con valori vecchi.
         """
-        punti = calcoli.punti_statistica(letture)
+        imp = self.impostazioni
+        punti = calcoli.punti_consumo(
+            dati.letture, dati.giorni, imp.distribuzione, imp.statistica_smc
+        )
         if not punti:
             return
-        alias = self.config_entry.data.get(CONF_ALIAS) or self.pdr
-        metadati = StatisticMetaData(
-            mean_type=StatisticMeanType.NONE,
-            has_sum=True,
-            name=f"MyItalgas {alias} consumo gas",
-            source=DOMAIN,
-            statistic_id=id_statistica(self.pdr),
-            unit_class=VolumeConverter.UNIT_CLASS,
-            unit_of_measurement=UnitOfVolume.CUBIC_METERS,
-        )
-        statistiche = [
-            StatisticData(
-                start=dt_util.start_of_local_day(p.data),
-                state=p.lettura,
-                sum=p.somma,
+        costi = calcoli.punti_costo(dati.letture, dati.giorni, imp.distribuzione)
+        modo = "letture" if imp.distribuzione is Distribuzione.LETTURA else "giorni"
+        firma = f"{modo}|{punti[0].data.isoformat()}|{costi[0].data.isoformat() if costi else '-'}"
+        if firma != self._firma_statistiche:
+            _LOGGER.debug("Disposizione delle statistiche cambiata, reimportazione completa")
+            get_instance(self.hass).async_clear_statistics(
+                [id_statistica(self.pdr), id_statistica_costo(self.pdr)]
             )
-            for p in punti
-        ]
-        async_add_external_statistics(self.hass, metadati, statistiche)
+            self._firma_statistiche = firma
 
-        opzioni = self.config_entry.options
-        if not (prezzo := opzioni.get(CONF_PREZZO, PREZZO_DEFAULT)):
+        alias = self.config_entry.data.get(CONF_ALIAS) or self.pdr
+        async_add_external_statistics(
+            self.hass,
+            StatisticMetaData(
+                mean_type=StatisticMeanType.NONE,
+                has_sum=True,
+                name=f"MyItalgas {alias} consumo gas",
+                source=DOMAIN,
+                statistic_id=id_statistica(self.pdr),
+                unit_class=VolumeConverter.UNIT_CLASS,
+                unit_of_measurement=UnitOfVolume.CUBIC_METERS,
+            ),
+            _statistiche(punti),
+        )
+        if not costi:
             return
-        # Il pannello Energia non accetta un prezzo fisso per le statistiche esterne:
-        # serve una statistica dei costi. Stima con un prezzo unico per tutto lo storico.
-        euro_per_m3 = prezzo * opzioni.get(CONF_COEFFICIENTE, COEFFICIENTE_DEFAULT)
         async_add_external_statistics(
             self.hass,
             StatisticMetaData(
@@ -297,11 +412,15 @@ class ItalgasCoordinator(DataUpdateCoordinator[DatiItalgas]):
                 unit_class=None,
                 unit_of_measurement=self.hass.config.currency,
             ),
-            [
-                StatisticData(
-                    start=dt_util.start_of_local_day(p.data),
-                    sum=round(p.somma * euro_per_m3, 4),
-                )
-                for p in punti
-            ],
+            _statistiche(costi),
         )
+
+
+def _statistiche(punti: list[PuntoStatistica]) -> list[StatisticData]:
+    righe = []
+    for p in punti:
+        riga = StatisticData(start=dt_util.start_of_local_day(p.data), sum=p.somma)
+        if p.lettura is not None:
+            riga["state"] = p.lettura
+        righe.append(riga)
+    return righe

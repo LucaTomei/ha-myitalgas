@@ -11,11 +11,25 @@ CONF_ALIAS: Final = "alias"
 CONF_INDIRIZZO: Final = "indirizzo"
 CONF_MATRICOLA: Final = "matricola"
 CONF_COEFFICIENTE: Final = "coefficiente"
-CONF_PREZZO: Final = "prezzo"
 CONF_INTERVALLO_ORE: Final = "intervallo_ore"
+CONF_DISTRIBUZIONE: Final = "distribuzione"
+CONF_SENSORE_TEMPERATURA: Final = "sensore_temperatura"
+CONF_STATISTICA_SMC: Final = "statistica_smc"
+# opzione della versione 1.x, convertita in un periodo tariffario
+CONF_PREZZO_UNICO: Final = "prezzo"
+
+# Periodi tariffari (sottovoci dell'integrazione)
+SUBENTRY_TARIFFA: Final = "tariffa"
+CONF_DAL: Final = "dal"
+CONF_PREZZO_SC1: Final = "prezzo_sc1"
+CONF_PREZZO_SC2: Final = "prezzo_sc2"
+CONF_PREZZO_SC3: Final = "prezzo_sc3"
+CONF_QUOTA_FISSA: Final = "quota_fissa"
 
 COEFFICIENTE_DEFAULT: Final = 1.0
-PREZZO_DEFAULT: Final = 0.0
+COEFFICIENTE_MIN: Final = 0.5
+COEFFICIENTE_MAX: Final = 1.5
+DISTRIBUZIONE_DEFAULT: Final = "giornaliera"
 INTERVALLO_ORE_DEFAULT: Final = 12
 INTERVALLO_ORE_MIN: Final = 1
 INTERVALLO_ORE_MAX: Final = 168

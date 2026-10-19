@@ -51,20 +51,88 @@
       "reconfigure_successful": "Credenziali aggiornate."
     }
   },
+  "config_subentries": {
+    "tariffa": {
+      "entry_type": "Periodo tariffario",
+      "initiate_flow": {
+        "user": "Aggiungi periodo tariffario"
+      },
+      "step": {
+        "user": {
+          "title": "Nuovo periodo tariffario",
+          "description": "Prezzi in vigore dalla data indicata fino al periodo successivo. Tutti i valori sono IVA e imposte incluse; trovi come calcolarli nel README dell'integrazione.",
+          "data": {
+            "dal": "In vigore dal",
+            "prezzo_sc1": "Prezzo variabile (€/Smc, IVA e imposte incluse) – fino a 120 Smc/anno",
+            "prezzo_sc2": "Prezzo variabile (€/Smc, IVA e imposte incluse) – da 121 a 480 Smc/anno",
+            "prezzo_sc3": "Prezzo variabile (€/Smc, IVA e imposte incluse) – oltre 480 Smc/anno",
+            "quota_fissa": "Quota fissa (€/mese, IVA inclusa)"
+          },
+          "data_description": {
+            "dal": "Data da cui valgono questi prezzi.",
+            "prezzo_sc1": "Somma di tutte le voci al metro cubo: materia prima, trasporto e gestione del contatore, oneri di sistema, accisa e addizionale regionale, più IVA. NON è il totale della bolletta diviso gli Smc: il totale comprende anche le quote fisse, da indicare a parte.",
+            "prezzo_sc2": "Se vuoto si usa il prezzo dello scaglione precedente. Cambia soprattutto per accisa e addizionale regionale.",
+            "prezzo_sc3": "Se vuoto si usa il prezzo dello scaglione precedente. Oltre 480 Smc l'IVA passa dal 10% al 22%.",
+            "quota_fissa": "Somma delle quote fisse mensili (commercializzazione, trasporto, oneri), IVA inclusa. Viene ripartita giorno per giorno."
+          }
+        },
+        "reconfigure": {
+          "title": "Modifica periodo tariffario",
+          "description": "Prezzi in vigore dalla data indicata fino al periodo successivo. Tutti i valori sono IVA e imposte incluse.",
+          "data": {
+            "dal": "In vigore dal",
+            "prezzo_sc1": "Prezzo variabile (€/Smc, IVA e imposte incluse) – fino a 120 Smc/anno",
+            "prezzo_sc2": "Prezzo variabile (€/Smc, IVA e imposte incluse) – da 121 a 480 Smc/anno",
+            "prezzo_sc3": "Prezzo variabile (€/Smc, IVA e imposte incluse) – oltre 480 Smc/anno",
+            "quota_fissa": "Quota fissa (€/mese, IVA inclusa)"
+          },
+          "data_description": {
+            "dal": "Data da cui valgono questi prezzi.",
+            "prezzo_sc1": "Somma di tutte le voci al metro cubo, IVA inclusa. NON è il totale della bolletta diviso gli Smc.",
+            "prezzo_sc2": "Se vuoto si usa il prezzo dello scaglione precedente.",
+            "prezzo_sc3": "Se vuoto si usa il prezzo dello scaglione precedente.",
+            "quota_fissa": "Somma delle quote fisse mensili, IVA inclusa."
+          }
+        }
+      },
+      "error": {
+        "dal_esistente": "Esiste già un periodo tariffario che inizia in questa data."
+      },
+      "abort": {
+        "reconfigure_successful": "Periodo tariffario aggiornato."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
         "title": "Opzioni MyItalgas",
         "data": {
           "intervallo_ore": "Intervallo di aggiornamento",
-          "coefficiente": "Coefficiente di conversione (m³ → Smc)",
-          "prezzo": "Prezzo medio del gas (€/Smc)"
+          "coefficiente": "Coefficiente C (conversione m³ → Smc)",
+          "distribuzione": "Distribuzione dei consumi nel pannello Energia",
+          "sensore_temperatura": "Sensore della temperatura esterna",
+          "statistica_smc": "Statistica dei consumi in Smc"
         },
         "data_description": {
           "intervallo_ore": "Ogni quanto controllare se sul portale ci sono letture nuove. I contatori elettronici vengono letti circa una volta al mese: 12 ore sono più che sufficienti.",
-          "coefficiente": "Coefficiente C riportato in bolletta, usato per convertire i metri cubi in standard metri cubi (Smc).",
-          "prezzo": "Facoltativo. Prezzo medio per standard metro cubo, tutto compreso (lo trovi in bolletta). Se impostato, viene creata una statistica dei costi stimati per il pannello Energia; lo stesso prezzo si applica a tutto lo storico. 0 = disattivato."
+          "coefficiente": "Il coefficiente C riportato in bolletta (dipende dal comune: altitudine e zona climatica). Converte i metri cubi letti dal contatore negli Smc (standard metri cubi) su cui si paga.",
+          "distribuzione": "Le letture arrivano circa una volta al mese: il consumo tra due letture può essere distribuito sui singoli giorni oppure mostrato tutto nel giorno della lettura.",
+          "sensore_temperatura": "Necessario solo per la distribuzione sui gradi giorno. Serve un sensore con statistiche a lungo termine (state_class: measurement); per i giorni senza dati si usa la distribuzione uniforme.",
+          "statistica_smc": "Esporta nel pannello Energia i volumi già moltiplicati per il coefficiente C, così i totali coincidono con gli Smc della bolletta. Disattivato: metri cubi letti dal contatore."
         }
+      }
+    },
+    "error": {
+      "sensore_richiesto": "Per la distribuzione sui gradi giorno scegli un sensore della temperatura esterna."
+    }
+  },
+  "selector": {
+    "distribuzione": {
+      "options": {
+        "giornaliera": "Uniforme sui giorni tra due letture (consigliata)",
+        "gradi_giorno": "Sui giorni tra due letture, in base ai gradi giorno (temperatura esterna)",
+        "lettura": "Tutto nel giorno della lettura"
       }
     }
   },
@@ -142,11 +210,41 @@
           }
         }
       },
+      "consumo_anno_smc": {
+        "name": "Consumo anno corrente (Smc)",
+        "state_attributes": {
+          "anno": {
+            "name": "Anno"
+          }
+        }
+      },
       "consumo_anno_precedente": {
         "name": "Consumo anno precedente",
         "state_attributes": {
           "anno": {
             "name": "Anno"
+          }
+        }
+      },
+      "costo_stimato_anno": {
+        "name": "Costo stimato anno corrente",
+        "state_attributes": {
+          "anno": {
+            "name": "Anno"
+          }
+        }
+      },
+      "prezzo_marginale_attuale": {
+        "name": "Prezzo marginale attuale",
+        "state_attributes": {
+          "scaglione": {
+            "name": "Scaglione"
+          },
+          "consumo_anno_smc": {
+            "name": "Consumo dell'anno (Smc)"
+          },
+          "tariffa_dal": {
+            "name": "Periodo tariffario dal"
           }
         }
       },
@@ -159,6 +257,25 @@
           "storico_completo": {
             "name": "Storico completo scaricato"
           }
+        }
+      }
+    }
+  },
+  "issues": {
+    "coefficiente_non_impostato": {
+      "title": "Imposta il coefficiente C di {nome}",
+      "fix_flow": {
+        "step": {
+          "coefficiente": {
+            "title": "Coefficiente C",
+            "description": "Inserisci il coefficiente C riportato nella bolletta del gas di {nome} (di solito tra 0,95 e 1,02). Serve per calcolare correttamente gli Smc e i costi. Se il tuo coefficiente è proprio 1, puoi ignorare questa segnalazione.",
+            "data": {
+              "coefficiente": "Coefficiente C"
+            }
+          }
+        },
+        "abort": {
+          "entry_rimossa": "La fornitura non esiste più."
         }
       }
     }

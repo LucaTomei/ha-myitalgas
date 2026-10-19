@@ -19,22 +19,41 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
-from custom_components.myitalgas.const import CONF_COEFFICIENTE, CONF_PREZZO, DOMAIN
+from custom_components.myitalgas.const import (
+    CONF_COEFFICIENTE,
+    CONF_DISTRIBUZIONE,
+    CONF_SENSORE_TEMPERATURA,
+    CONF_STATISTICA_SMC,
+    DOMAIN,
+)
 from custom_components.myitalgas.coordinator import id_statistica, id_statistica_costo
 from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
 from homeassistant.components.recorder.statistics import (
+    async_import_statistics,
     get_metadata,
     statistics_during_period,
 )
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
+from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 
-from .conftest import PASSWORD, PDR, USERNAME, crea_entry
+from .conftest import PASSWORD, PDR, USERNAME, crea_entry, tariffa
 from .portale import LetturaFinta, PortaleFinto, letture_mensili
 
 ADESSO = "2026-10-19 10:00:00+02:00"
+# un punto per ogni giorno dalla prima all'ultima lettura (distribuzione giornaliera)
+PUNTI_GIORNALIERI = (date(2026, 9, 30) - date(2022, 12, 1)).days + 1
 
 
 @pytest.fixture(autouse=True)
@@ -54,9 +73,9 @@ def _stato(hass: HomeAssistant, chiave: str):
     return stato
 
 
-async def _avvia(hass: HomeAssistant, **opzioni) -> MockConfigEntry:
+async def _avvia(hass: HomeAssistant, tariffe=None, **opzioni) -> MockConfigEntry:
     """Configura la fornitura e attende anche il recupero dello storico in background."""
-    entry = crea_entry(hass, **opzioni)
+    entry = crea_entry(hass, tariffe=tariffe, **opzioni)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.state is ConfigEntryState.LOADED
@@ -107,6 +126,12 @@ async def test_sensori(hass: HomeAssistant, portale: PortaleFinto) -> None:
     assert _stato(hass, "consumo_anno").attributes["anno"] == 2026
     assert _stato(hass, "consumo_anno_precedente").state == "473.0"
     assert _stato(hass, "consumo_anno_precedente").attributes["anno"] == 2025
+    assert _stato(hass, "consumo_anno_smc").state == "308.0"
+    # senza periodi tariffari i costi non sono noti
+    assert _stato(hass, "costo_stimato_anno").state == "unknown"
+    assert _stato(hass, "prezzo_marginale_attuale").state == "unknown"
+    assert _stato(hass, "costo_stimato_anno").attributes["unit_of_measurement"] == "EUR"
+    assert _stato(hass, "prezzo_marginale_attuale").attributes["unit_of_measurement"] == "EUR/Smc"
 
     aggiornamento = _stato(hass, "ultimo_aggiornamento")
     assert dt_util.parse_datetime(aggiornamento.state) == dt_util.parse_datetime(ADESSO)
@@ -131,21 +156,26 @@ async def test_coefficiente(hass: HomeAssistant, portale: PortaleFinto) -> None:
 
 
 async def test_statistiche_energia(hass: HomeAssistant, portale: PortaleFinto) -> None:
-    """Statistica esterna con un punto per ogni lettura, alla data reale."""
+    """Statistica esterna con il consumo distribuito giorno per giorno (predefinito)."""
     await _avvia(hass)
     righe = await _statistiche(hass)
-    attese = letture_mensili()
-    assert len(righe) == len(attese)
+    assert len(righe) == PUNTI_GIORNALIERI
     prima, ultima = righe[0], righe[-1]
     assert dt_util.utc_from_timestamp(prima["start"]) == dt_util.start_of_local_day(
         date(2022, 12, 1)
     )
     assert prima["sum"] == 0
+    assert prima["state"] == 0
     assert dt_util.utc_from_timestamp(ultima["start"]) == dt_util.start_of_local_day(
         date(2026, 9, 30)
     )
-    assert ultima["state"] == 1812
-    assert ultima["sum"] == 1812
+    assert ultima["sum"] == pytest.approx(1812)
+    # settembre 2026: 9 m³ in 30 giorni -> 0,3 m³ al giorno, nessun picco a fine mese
+    per_giorno = {
+        dt_util.as_local(dt_util.utc_from_timestamp(r["start"])).date(): r["sum"] for r in righe
+    }
+    assert per_giorno[date(2026, 9, 15)] - per_giorno[date(2026, 9, 14)] == pytest.approx(0.3)
+    assert per_giorno[date(2026, 9, 30)] - per_giorno[date(2026, 9, 29)] == pytest.approx(0.3)
 
     metadati = await get_instance(hass).async_add_executor_job(
         partial(get_metadata, hass, statistic_ids={id_statistica(PDR)})
@@ -158,24 +188,35 @@ async def test_statistiche_energia(hass: HomeAssistant, portale: PortaleFinto) -
 
 
 async def test_statistica_costi(hass: HomeAssistant, portale: PortaleFinto) -> None:
-    """Con un prezzo impostato si crea anche la statistica dei costi stimati."""
+    """Con un periodo tariffario si crea la statistica dei costi, quote fisse incluse."""
     assert await _statistiche(hass, id_statistica_costo(PDR)) == []
-    entry = await _avvia(hass, **{CONF_PREZZO: 1.25, CONF_COEFFICIENTE: 0.99})
+    entry = await _avvia(
+        hass,
+        tariffe=[tariffa("1900-01-01", 1.25, fissa=10.0)],
+        **{CONF_COEFFICIENTE: 0.99},
+    )
     righe = await _statistiche(hass, id_statistica_costo(PDR))
-    assert len(righe) == 47
+    assert len(righe) == PUNTI_GIORNALIERI
     assert righe[0]["sum"] == 0
-    assert righe[-1]["sum"] == pytest.approx(1812 * 0.99 * 1.25)
+    # quota fissa: 120 €/anno ripartiti sui giorni dell'anno (il 2024 è bisestile)
+    giorni = PUNTI_GIORNALIERI - 1
+    fisso = 120.0 + 120.0 / 365 * (giorni - 366)
+    assert righe[-1]["sum"] == pytest.approx(1812 * 0.99 * 1.25 + fisso, abs=0.01)
     metadati = await get_instance(hass).async_add_executor_job(
         partial(get_metadata, hass, statistic_ids={id_statistica_costo(PDR)})
     )
     assert metadati[id_statistica_costo(PDR)][1]["unit_of_measurement"] == hass.config.currency
+    assert _stato(hass, "costo_stimato_anno").state != "unknown"
+    assert _stato(hass, "prezzo_marginale_attuale").state == "1.25"
 
-    # prezzo tolto: la statistica dei costi viene eliminata
-    hass.config_entries.async_update_entry(entry, options={CONF_PREZZO: 0.0})
-    assert await hass.config_entries.async_reload(entry.entry_id)
-    await hass.async_block_till_done()
+    # periodi tariffari rimossi: la statistica dei costi viene eliminata
+    for subentry_id in list(entry.subentries):
+        hass.config_entries.async_remove_subentry(entry, subentry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state is ConfigEntryState.LOADED
     assert await _statistiche(hass, id_statistica_costo(PDR)) == []
-    assert len(await _statistiche(hass)) == 47
+    assert len(await _statistiche(hass)) == PUNTI_GIORNALIERI
+    assert _stato(hass, "costo_stimato_anno").state == "unknown"
 
 
 async def test_aggiornamento_incrementale_e_nuova_lettura(
@@ -329,7 +370,7 @@ async def test_storico_salvato_illeggibile(
     assert _stato(hass, "lettura").state == "1812.0"
     # storico ignorato: viene riscaricato tutto
     assert date(2000, 1, 1) in [da for da, _ in portale.ricerche]
-    assert len(await _statistiche(hass)) == 47
+    assert len(await _statistiche(hass)) == PUNTI_GIORNALIERI
 
 
 async def test_periodi_non_scaricati(
@@ -348,7 +389,7 @@ async def test_periodi_non_scaricati(
     await hass.async_block_till_done()
     assert _stato(hass, "ultimo_aggiornamento").attributes["periodi_non_scaricati"] == []
     assert portale.ricerche[0][0] <= date.fromisoformat(mancanti[0].split("/")[0])
-    assert len(await _statistiche(hass)) == 47
+    assert len(await _statistiche(hass)) == PUNTI_GIORNALIERI
 
 
 async def test_gennaio_senza_letture(
@@ -419,7 +460,7 @@ async def test_primo_avvio_rapido(hass: HomeAssistant, portale: PortaleFinto) ->
     assert date(2000, 1, 1) in [da for da, _ in portale.ricerche]
     assert _stato(hass, "consumo_anno_precedente").state == "473.0"
     assert _stato(hass, "ultimo_aggiornamento").attributes["storico_completo"] is True
-    assert len(await _statistiche(hass)) == 47
+    assert len(await _statistiche(hass)) == PUNTI_GIORNALIERI
     assert entry.runtime_data.last_update_success is True
 
 
@@ -439,7 +480,7 @@ async def test_storico_in_background_non_riuscito(
     await hass.async_block_till_done(wait_background_tasks=True)
     assert _stato(hass, "ultimo_aggiornamento").attributes["storico_completo"] is True
     assert _stato(hass, "consumo_anno_precedente").state == "473.0"
-    assert len(await _statistiche(hass)) == 47
+    assert len(await _statistiche(hass)) == PUNTI_GIORNALIERI
 
 
 async def test_migrazione_dalla_versione_1_0_0(
@@ -501,3 +542,151 @@ async def test_pdr_non_compare_nei_log(
     ]
     assert any("Finished fetching myitalgas Casa" in r for r in righe)
     assert not [r for r in righe if PDR in r]
+
+
+async def test_migrazione_prezzo_unico(hass: HomeAssistant, portale: PortaleFinto) -> None:
+    """Il prezzo unico della 1.x diventa un periodo tariffario valido da sempre."""
+    entry = crea_entry(hass, minor_version=1, **{CONF_COEFFICIENTE: 0.99, "prezzo": 1.25})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.minor_version == 2
+    assert "prezzo" not in entry.options
+    assert entry.options[CONF_COEFFICIENTE] == 0.99
+    (periodo,) = entry.subentries.values()
+    assert periodo.subentry_type == "tariffa"
+    assert dict(periodo.data) == {
+        "dal": "1900-01-01",
+        "prezzo_sc1": 1.25,
+        "prezzo_sc2": 1.25,
+        "prezzo_sc3": 1.25,
+        "quota_fissa": 0.0,
+    }
+    righe = await _statistiche(hass, id_statistica_costo(PDR))
+    assert righe[-1]["sum"] == pytest.approx(1812 * 0.99 * 1.25)
+
+
+async def test_migrazione_senza_prezzo(hass: HomeAssistant, portale: PortaleFinto) -> None:
+    """Senza prezzo nella 1.x non si crea nessun periodo tariffario."""
+    entry = crea_entry(hass, minor_version=1, prezzo=0.0)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.minor_version == 2
+    assert entry.subentries == {}
+    assert entry.options == {}
+
+
+async def test_distribuzione_alla_lettura_e_cambio(
+    hass: HomeAssistant, portale: PortaleFinto
+) -> None:
+    """Tutto il consumo nel giorno della lettura; cambiando modalità non restano punti orfani."""
+    entry = await _avvia(
+        hass, tariffe=[tariffa("1900-01-01", 1.0)], **{CONF_DISTRIBUZIONE: "lettura"}
+    )
+    righe = await _statistiche(hass)
+    assert len(righe) == len(letture_mensili())
+    assert righe[-1]["state"] == 1812
+    assert len(await _statistiche(hass, id_statistica_costo(PDR))) == len(letture_mensili())
+
+    hass.config_entries.async_update_entry(entry, options={CONF_DISTRIBUZIONE: "giornaliera"})
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert len(await _statistiche(hass)) == PUNTI_GIORNALIERI
+    assert len(await _statistiche(hass, id_statistica_costo(PDR))) == PUNTI_GIORNALIERI
+
+    hass.config_entries.async_update_entry(entry, options={CONF_DISTRIBUZIONE: "lettura"})
+    await hass.async_block_till_done(wait_background_tasks=True)
+    righe = await _statistiche(hass)
+    assert len(righe) == len(letture_mensili())
+    assert righe[-1]["sum"] == pytest.approx(1812)
+
+
+async def test_statistica_in_smc(hass: HomeAssistant, portale: PortaleFinto) -> None:
+    """Con l'opzione attiva la statistica riporta gli Smc (m³ × C)."""
+    await _avvia(hass, **{CONF_COEFFICIENTE: 1.02, CONF_STATISTICA_SMC: True})
+    righe = await _statistiche(hass)
+    assert righe[-1]["sum"] == pytest.approx(1812 * 1.02)
+    assert righe[0].get("state") is None
+
+
+async def test_distribuzione_gradi_giorno(hass: HomeAssistant, portale: PortaleFinto) -> None:
+    """Con un sensore di temperatura i giorni più freddi ricevono più consumo."""
+    sensore = "sensor.temperatura_esterna"
+    righe_temperatura = []
+    for giorno in range(1, 31):
+        temperatura = 10.0 if giorno <= 15 else 15.0
+        inizio = dt_util.start_of_local_day(date(2026, 9, giorno)) + timedelta(hours=12)
+        righe_temperatura.append(
+            StatisticData(start=inizio, mean=temperatura, min=temperatura, max=temperatura)
+        )
+    async_import_statistics(
+        hass,
+        StatisticMetaData(
+            mean_type=StatisticMeanType.ARITHMETIC,
+            has_sum=False,
+            name="Temperatura esterna",
+            source="recorder",
+            statistic_id=sensore,
+            unit_class="temperature",
+            unit_of_measurement="°C",
+        ),
+        righe_temperatura,
+    )
+    await async_wait_recording_done(hass)
+
+    await _avvia(hass, **{CONF_DISTRIBUZIONE: "gradi_giorno", CONF_SENSORE_TEMPERATURA: sensore})
+    righe = await _statistiche(hass)
+    per_giorno = {
+        dt_util.as_local(dt_util.utc_from_timestamp(r["start"])).date(): r["sum"] for r in righe
+    }
+    freddo = per_giorno[date(2026, 9, 5)] - per_giorno[date(2026, 9, 4)]
+    mite = per_giorno[date(2026, 9, 25)] - per_giorno[date(2026, 9, 24)]
+    assert freddo > mite > 0
+    # il consumo del mese resta quello letto dal contatore
+    assert per_giorno[date(2026, 9, 30)] - per_giorno[date(2026, 8, 31)] == pytest.approx(9)
+    # agosto, senza temperature: distribuzione uniforme
+    agosto = per_giorno[date(2026, 8, 10)] - per_giorno[date(2026, 8, 9)]
+    assert agosto == pytest.approx(5 / 31, abs=1e-3)
+
+
+async def test_segnalazione_coefficiente(
+    hass: HomeAssistant, portale: PortaleFinto, hass_client
+) -> None:
+    """Coefficiente C non impostato: segnalazione in Riparazioni, risolvibile da lì."""
+    assert await async_setup_component(hass, "repairs", {})
+    entry = await _avvia(hass)
+    issue_id = f"coefficiente_{entry.entry_id}"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+
+    client = await hass_client()
+    risposta = await client.post(
+        "/api/repairs/issues/fix", json={"handler": DOMAIN, "issue_id": issue_id}
+    )
+    assert risposta.status == 200
+    flusso = await risposta.json()
+    assert flusso["step_id"] == "coefficiente"
+    risposta = await client.post(
+        f"/api/repairs/issues/fix/{flusso['flow_id']}", json={"coefficiente": 0.99}
+    )
+    assert (await risposta.json())["type"] == "create_entry"
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert entry.options[CONF_COEFFICIENTE] == 0.99
+    assert entry.state is ConfigEntryState.LOADED
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+    assert _stato(hass, "consumo_periodo_smc").state == "8.91"
+
+
+async def test_segnalazione_segue_il_coefficiente(
+    hass: HomeAssistant, portale: PortaleFinto
+) -> None:
+    """La segnalazione compare solo con il coefficiente predefinito e sparisce con la fornitura."""
+    entry = await _avvia(hass, **{CONF_COEFFICIENTE: 0.99})
+    issue_id = f"coefficiente_{entry.entry_id}"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+    hass.config_entries.async_update_entry(entry, options={})
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None

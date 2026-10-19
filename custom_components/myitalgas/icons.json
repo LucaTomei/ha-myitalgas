@@ -1,14 +1,39 @@
 {
   "entity": {
     "sensor": {
-      "lettura": { "default": "mdi:meter-gas" },
-      "data_lettura": { "default": "mdi:calendar-check" },
-      "consumo_periodo": { "default": "mdi:fire" },
-      "consumo_periodo_smc": { "default": "mdi:fire" },
-      "media_giornaliera": { "default": "mdi:chart-line" },
-      "consumo_anno": { "default": "mdi:calendar-today" },
-      "consumo_anno_precedente": { "default": "mdi:calendar-arrow-left" },
-      "ultimo_aggiornamento": { "default": "mdi:cloud-sync" }
+      "lettura": {
+        "default": "mdi:meter-gas"
+      },
+      "data_lettura": {
+        "default": "mdi:calendar-check"
+      },
+      "consumo_periodo": {
+        "default": "mdi:fire"
+      },
+      "consumo_periodo_smc": {
+        "default": "mdi:fire"
+      },
+      "media_giornaliera": {
+        "default": "mdi:chart-line"
+      },
+      "consumo_anno": {
+        "default": "mdi:calendar-today"
+      },
+      "consumo_anno_precedente": {
+        "default": "mdi:calendar-arrow-left"
+      },
+      "ultimo_aggiornamento": {
+        "default": "mdi:cloud-sync"
+      },
+      "consumo_anno_smc": {
+        "default": "mdi:calendar-today"
+      },
+      "costo_stimato_anno": {
+        "default": "mdi:cash"
+      },
+      "prezzo_marginale_attuale": {
+        "default": "mdi:currency-eur"
+      }
     }
   }
 }

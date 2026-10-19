@@ -21,14 +21,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import calcoli
-from .const import (
-    COEFFICIENTE_DEFAULT,
-    CONF_ALIAS,
-    CONF_COEFFICIENTE,
-    CONF_MATRICOLA,
-    DOMAIN,
-    PORTALE_URL,
-)
+from .const import CONF_ALIAS, CONF_MATRICOLA, DOMAIN, PORTALE_URL
 from .coordinator import DatiItalgas, ItalgasConfigEntry, ItalgasCoordinator
 
 # Il coordinatore aggiorna tutte le entità insieme: nessun limite di parallelismo.
@@ -46,6 +39,8 @@ class ItalgasSensorDescription(SensorEntityDescription):
 
     valore: Callable[[DatiItalgas, float], Valore]
     attributi: Callable[[DatiItalgas], dict[str, Any] | None] = lambda _: None
+    # unità di misura che dipende dalla valuta configurata in Home Assistant
+    unita_valuta: Callable[[str], str] | None = None
 
 
 def _data(giorno: date | None) -> str | None:
@@ -85,16 +80,40 @@ def _media(dati: DatiItalgas, _coeff: float) -> float | None:
     return round(media, 3) if media is not None else None
 
 
-def _anno(scarto: int) -> Callable[[DatiItalgas, float], float | None]:
+def _per_anno(
+    funzione: Callable[[list[calcoli.Giorno], int], float | None], scarto: int
+) -> Callable[[DatiItalgas, float], float | None]:
     def valore(dati: DatiItalgas, _coeff: float) -> float | None:
         anno = dt_util.now().year - scarto
-        consumo = calcoli.consumo_anno(dati.periodi, anno)
-        if consumo is None and scarto == 0 and dati.ultima and dati.ultima.data.year < anno:
+        risultato = funzione(dati.giorni, anno)
+        if risultato is None and scarto == 0 and dati.giorni and dati.giorni[-1].data.year < anno:
             # nessuna lettura ancora arrivata quest'anno
             return 0.0
-        return consumo
+        return risultato
 
     return valore
+
+
+def _costo_anno(dati: DatiItalgas, _coeff: float) -> float | None:
+    if not dati.tariffe:
+        return None
+    return _per_anno(calcoli.costo_anno, 0)(dati, _coeff)
+
+
+def _prezzo_marginale(dati: DatiItalgas, _coeff: float) -> float | None:
+    return calcoli.prezzo_marginale(dati.giorni, dati.tariffe, dt_util.now().date())
+
+
+def _attributi_prezzo(dati: DatiItalgas) -> dict[str, Any] | None:
+    oggi = dt_util.now().date()
+    if (tariffa := calcoli.tariffa_in_vigore(dati.tariffe, oggi)) is None:
+        return None
+    cumulato = sum(g.smc for g in dati.giorni if g.data.year == oggi.year)
+    return {
+        "scaglione": calcoli.scaglione(cumulato),
+        "consumo_anno_smc": round(cumulato, 2),
+        "tariffa_dal": tariffa.dal.isoformat(),
+    }
 
 
 def _attributi_anno(scarto: int) -> Callable[[DatiItalgas], dict[str, Any]]:
@@ -148,7 +167,16 @@ SENSORI: tuple[ItalgasSensorDescription, ...] = (
         translation_key="consumo_anno",
         device_class=SensorDeviceClass.GAS,
         native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
-        valore=_anno(0),
+        suggested_display_precision=0,
+        valore=_per_anno(calcoli.consumo_anno, 0),
+        attributi=_attributi_anno(0),
+    ),
+    ItalgasSensorDescription(
+        key="consumo_anno_smc",
+        translation_key="consumo_anno_smc",
+        native_unit_of_measurement=UNITA_SMC,
+        suggested_display_precision=0,
+        valore=_per_anno(calcoli.smc_anno, 0),
         attributi=_attributi_anno(0),
     ),
     ItalgasSensorDescription(
@@ -156,8 +184,26 @@ SENSORI: tuple[ItalgasSensorDescription, ...] = (
         translation_key="consumo_anno_precedente",
         device_class=SensorDeviceClass.GAS,
         native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
-        valore=_anno(1),
+        suggested_display_precision=0,
+        valore=_per_anno(calcoli.consumo_anno, 1),
         attributi=_attributi_anno(1),
+    ),
+    ItalgasSensorDescription(
+        key="costo_stimato_anno",
+        translation_key="costo_stimato_anno",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        valore=_costo_anno,
+        attributi=_attributi_anno(0),
+        unita_valuta=lambda valuta: valuta,
+    ),
+    ItalgasSensorDescription(
+        key="prezzo_marginale_attuale",
+        translation_key="prezzo_marginale_attuale",
+        suggested_display_precision=3,
+        valore=_prezzo_marginale,
+        attributi=_attributi_prezzo,
+        unita_valuta=lambda valuta: f"{valuta}/Smc",
     ),
     ItalgasSensorDescription(
         key="ultimo_aggiornamento",
@@ -196,6 +242,10 @@ class ItalgasSensor(CoordinatorEntity[ItalgasCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.entity_description = descrizione
         self._attr_unique_id = f"{coordinator.pdr}_{descrizione.key}"
+        if descrizione.unita_valuta is not None:
+            self._attr_native_unit_of_measurement = descrizione.unita_valuta(
+                coordinator.hass.config.currency
+            )
         dati_entry = coordinator.config_entry.data
         alias = dati_entry.get(CONF_ALIAS)
         self._attr_device_info = DeviceInfo(
@@ -221,10 +271,9 @@ class ItalgasSensor(CoordinatorEntity[ItalgasCoordinator], SensorEntity):
     @property
     def native_value(self) -> Valore:
         """Valore del sensore."""
-        coefficiente = self.coordinator.config_entry.options.get(
-            CONF_COEFFICIENTE, COEFFICIENTE_DEFAULT
+        return self.entity_description.valore(
+            self.coordinator.data, self.coordinator.data.coefficiente
         )
-        return self.entity_description.valore(self.coordinator.data, coefficiente)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

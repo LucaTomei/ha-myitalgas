@@ -51,20 +51,88 @@
       "reconfigure_successful": "Credentials updated."
     }
   },
+  "config_subentries": {
+    "tariffa": {
+      "entry_type": "Tariff period",
+      "initiate_flow": {
+        "user": "Add tariff period"
+      },
+      "step": {
+        "user": {
+          "title": "New tariff period",
+          "description": "Prices in force from the given date until the next period. All values include VAT and taxes; the integration README explains how to work them out.",
+          "data": {
+            "dal": "Valid from",
+            "prezzo_sc1": "Variable price (€/Smc, VAT and taxes included) – up to 120 Smc/year",
+            "prezzo_sc2": "Variable price (€/Smc, VAT and taxes included) – 121 to 480 Smc/year",
+            "prezzo_sc3": "Variable price (€/Smc, VAT and taxes included) – over 480 Smc/year",
+            "quota_fissa": "Fixed fee (€/month, VAT included)"
+          },
+          "data_description": {
+            "dal": "Date from which these prices apply.",
+            "prezzo_sc1": "Sum of all per-cubic-meter items: gas, transport and meter management, system charges, excise and regional surcharge, plus VAT. It is NOT the bill total divided by the Smc: the total also includes the fixed fees, entered separately.",
+            "prezzo_sc2": "If empty, the price of the previous bracket is used. It changes mostly because of excise and regional surcharge.",
+            "prezzo_sc3": "If empty, the price of the previous bracket is used. Above 480 Smc VAT rises from 10% to 22%.",
+            "quota_fissa": "Sum of the monthly fixed fees (sales, transport, system charges), VAT included. It is spread day by day."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit tariff period",
+          "description": "Prices in force from the given date until the next period. All values include VAT and taxes.",
+          "data": {
+            "dal": "Valid from",
+            "prezzo_sc1": "Variable price (€/Smc, VAT and taxes included) – up to 120 Smc/year",
+            "prezzo_sc2": "Variable price (€/Smc, VAT and taxes included) – 121 to 480 Smc/year",
+            "prezzo_sc3": "Variable price (€/Smc, VAT and taxes included) – over 480 Smc/year",
+            "quota_fissa": "Fixed fee (€/month, VAT included)"
+          },
+          "data_description": {
+            "dal": "Date from which these prices apply.",
+            "prezzo_sc1": "Sum of all per-cubic-meter items, VAT included. It is NOT the bill total divided by the Smc.",
+            "prezzo_sc2": "If empty, the price of the previous bracket is used.",
+            "prezzo_sc3": "If empty, the price of the previous bracket is used.",
+            "quota_fissa": "Sum of the monthly fixed fees, VAT included."
+          }
+        }
+      },
+      "error": {
+        "dal_esistente": "A tariff period starting on this date already exists."
+      },
+      "abort": {
+        "reconfigure_successful": "Tariff period updated."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
         "title": "MyItalgas options",
         "data": {
           "intervallo_ore": "Update interval",
-          "coefficiente": "Conversion coefficient (m³ → Smc)",
-          "prezzo": "Average gas price (€/Smc)"
+          "coefficiente": "Coefficient C (m³ → Smc conversion)",
+          "distribuzione": "Consumption distribution in the Energy dashboard",
+          "sensore_temperatura": "Outdoor temperature sensor",
+          "statistica_smc": "Consumption statistic in Smc"
         },
         "data_description": {
           "intervallo_ore": "How often to check the portal for new readings. Smart meters are read about once a month: 12 hours is plenty.",
-          "coefficiente": "Coefficient C shown on your gas bill, used to convert cubic meters into standard cubic meters (Smc).",
-          "prezzo": "Optional. Average price per standard cubic meter, all costs included (see your bill). If set, an estimated cost statistic is created for the Energy dashboard; the same price is applied to the whole history. 0 = disabled."
+          "coefficiente": "Coefficient C shown on your gas bill (depends on the municipality: altitude and climate zone). Converts the cubic meters read by the meter into the standard cubic meters (Smc) you are billed for.",
+          "distribuzione": "Readings arrive about once a month: the consumption between two readings can be spread over the single days or shown entirely on the reading day.",
+          "sensore_temperatura": "Only needed for the degree-day distribution. Requires a sensor with long-term statistics (state_class: measurement); days without data use the uniform distribution.",
+          "statistica_smc": "Exports to the Energy dashboard the volumes already multiplied by coefficient C, so totals match the Smc on your bill. Off: cubic meters read by the meter."
         }
+      }
+    },
+    "error": {
+      "sensore_richiesto": "Choose an outdoor temperature sensor for the degree-day distribution."
+    }
+  },
+  "selector": {
+    "distribuzione": {
+      "options": {
+        "giornaliera": "Evenly over the days between two readings (recommended)",
+        "gradi_giorno": "Over the days between two readings, by heating degree days (outdoor temperature)",
+        "lettura": "Entirely on the reading day"
       }
     }
   },
@@ -142,11 +210,41 @@
           }
         }
       },
+      "consumo_anno_smc": {
+        "name": "Consumption this year (Smc)",
+        "state_attributes": {
+          "anno": {
+            "name": "Year"
+          }
+        }
+      },
       "consumo_anno_precedente": {
         "name": "Consumption last year",
         "state_attributes": {
           "anno": {
             "name": "Year"
+          }
+        }
+      },
+      "costo_stimato_anno": {
+        "name": "Estimated cost this year",
+        "state_attributes": {
+          "anno": {
+            "name": "Year"
+          }
+        }
+      },
+      "prezzo_marginale_attuale": {
+        "name": "Current marginal price",
+        "state_attributes": {
+          "scaglione": {
+            "name": "Bracket"
+          },
+          "consumo_anno_smc": {
+            "name": "Consumption this year (Smc)"
+          },
+          "tariffa_dal": {
+            "name": "Tariff period from"
           }
         }
       },
@@ -159,6 +257,25 @@
           "storico_completo": {
             "name": "Full history downloaded"
           }
+        }
+      }
+    }
+  },
+  "issues": {
+    "coefficiente_non_impostato": {
+      "title": "Set coefficient C for {nome}",
+      "fix_flow": {
+        "step": {
+          "coefficiente": {
+            "title": "Coefficient C",
+            "description": "Enter the coefficient C shown on the gas bill of {nome} (usually between 0.95 and 1.02). It is needed to compute Smc and costs correctly. If your coefficient really is 1, you can ignore this issue.",
+            "data": {
+              "coefficiente": "Coefficient C"
+            }
+          }
+        },
+        "abort": {
+          "entry_rimossa": "The supply no longer exists."
         }
       }
     }
