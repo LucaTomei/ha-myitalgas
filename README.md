@@ -252,16 +252,17 @@ pytest
 I test girano contro un portale simulato, costruito sulle pagine reali del portale
 (anonimizzate): nessuna richiesta verso clienti.italgas.it.
 
-Per pubblicare una nuova versione (serve [GitHub CLI](https://cli.github.com)):
+Per pubblicare una nuova versione:
 
 ```bash
 scripts/rilascia.sh 1.1.0
 ```
 
-Lo script aggiorna la versione nel manifest, crea il commit e la bozza della release con
-le note generate dai commit, e avvia il workflow *Rilascio*: questo esegue hassfest, la
-validazione HACS, lint e test, allega `myitalgas.zip` e pubblica la release. Se un
-controllo fallisce la release resta in bozza.
+Lo script aggiorna la versione nel manifest, crea il commit e il tag `v1.1.0` e li invia
+a GitHub. Il tag avvia il workflow *Rilascio*: esegue hassfest, la validazione HACS, lint
+e test, poi crea la release con le note generate dai commit e allega `myitalgas.zip`.
+Se un controllo fallisce la release non viene creata: corretto il problema, basta
+rilanciare lo script con la stessa versione.
 
 ## Note legali
 

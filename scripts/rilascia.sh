@@ -3,9 +3,11 @@
 #
 #   scripts/rilascia.sh 1.2.0
 #
-# Aggiorna la versione nel manifest, crea il commit, prepara la bozza della
-# release su GitHub (con le note generate dai commit) e avvia il workflow
-# "Rilascio", che esegue tutti i controlli, allega myitalgas.zip e pubblica.
+# Aggiorna la versione nel manifest, crea il commit e il tag vX.Y.Z e li invia a
+# GitHub. Il push del tag avvia il workflow "Rilascio", che esegue tutti i
+# controlli, crea la release con le note generate dai commit e allega
+# myitalgas.zip. Se un controllo fallisce la release non viene creata: corretto
+# il problema, rilancia lo script con la stessa versione.
 set -euo pipefail
 
 errore() { echo "Errore: $*" >&2; exit 1; }
@@ -15,14 +17,21 @@ VERSIONE="${1:-}"
 TAG="v$VERSIONE"
 MANIFEST="custom_components/myitalgas/manifest.json"
 
-command -v gh >/dev/null || errore "serve GitHub CLI (https://cli.github.com)"
-gh auth status >/dev/null 2>&1 || errore "esegui prima: gh auth login"
 cd "$(git rev-parse --show-toplevel)"
 [[ "$(git branch --show-current)" == "main" ]] || errore "passa al branch main"
 [[ -z "$(git status --porcelain)" ]] || errore "ci sono modifiche non salvate in un commit"
 git pull --ff-only --quiet
-git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && errore "il tag $TAG esiste già"
-gh release view "$TAG" >/dev/null 2>&1 && errore "la release $TAG esiste già"
+
+# Un tag già pubblicato senza release (controlli falliti) può essere rifatto.
+if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+  REPO_URL=$(git remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#; s#\.git$##')
+  if curl -fsS -o /dev/null "$REPO_URL/releases/tag/$TAG"; then
+    errore "la versione $TAG è già stata pubblicata"
+  fi
+  echo "Il tag $TAG esiste ma la release no: lo ricreo."
+  git push --quiet origin ":refs/tags/$TAG"
+fi
+git tag -d "$TAG" >/dev/null 2>&1 || true
 
 python3 - "$MANIFEST" "$VERSIONE" <<'PY'
 import json, sys
@@ -38,10 +47,11 @@ PY
 if ! git diff --quiet -- "$MANIFEST"; then
   git commit --quiet -m "Versione $VERSIONE" -- "$MANIFEST"
 fi
-git push --quiet
-gh release create "$TAG" --draft --target "$(git rev-parse HEAD)" --title "$TAG" --generate-notes
-gh workflow run rilascio.yml -f versione="$VERSIONE"
+git tag -a "$TAG" -m "Versione $VERSIONE"
+git push --quiet --atomic origin main "$TAG"
 
+REPO_URL=$(git remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#; s#\.git$##')
 echo
-echo "Bozza $TAG creata e workflow di rilascio avviato."
-echo "Segui l'avanzamento con:  gh run watch"
+echo "Tag $TAG inviato: il workflow di rilascio è partito."
+echo "Avanzamento: $REPO_URL/actions"
+echo "Release:     $REPO_URL/releases/tag/$TAG (disponibile in pochi minuti)"

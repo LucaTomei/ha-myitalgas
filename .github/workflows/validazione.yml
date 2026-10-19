@@ -27,8 +27,10 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # le immagini sono incluse nell'integrazione (cartella brand/)
-          ignore: brands
+          # brands: le immagini sono incluse nell'integrazione (cartella brand/)
+          # description, topics: richiesti solo per lo store predefinito di HACS,
+          # non per l'installazione come repository personalizzato
+          ignore: brands description topics
 
   test:
     name: Lint e test
