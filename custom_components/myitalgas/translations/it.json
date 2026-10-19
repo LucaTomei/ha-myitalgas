@@ -1,0 +1,174 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MyItalgas",
+        "description": "Accedi con le credenziali del portale clienti MyItalgas (clienti.italgas.it).",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Lo username che usi su clienti.italgas.it.",
+          "password": "La password che usi su clienti.italgas.it."
+        }
+      },
+      "pdr": {
+        "title": "Scegli la fornitura",
+        "description": "Il tuo profilo MyItalgas ha più di una fornitura. Scegli quella da aggiungere; le altre potrai aggiungerle in seguito aggiungendo di nuovo l'integrazione.",
+        "data": {
+          "pdr": "Punto di riconsegna (PDR)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Accedi di nuovo a MyItalgas",
+        "description": "Il portale MyItalgas ha rifiutato le credenziali salvate per il PDR {pdr}. Inseriscile di nuovo.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Aggiorna le credenziali MyItalgas",
+        "description": "Nuove credenziali per il PDR {pdr}.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Username o password errati.",
+      "cannot_connect": "Il portale MyItalgas non è raggiungibile. Riprova più tardi.",
+      "portal_error": "Il portale MyItalgas ha dato una risposta inattesa. Riprova più tardi.",
+      "no_pdr": "Nessuna fornitura associata a questo profilo MyItalgas. Aggiungila prima nella sezione PdR del portale.",
+      "pdr_missing": "La fornitura {pdr} non è associata a questo profilo MyItalgas.",
+      "unknown": "Errore imprevisto."
+    },
+    "abort": {
+      "already_configured": "Tutte le forniture di questo profilo sono già configurate.",
+      "reauth_successful": "Credenziali aggiornate.",
+      "reconfigure_successful": "Credenziali aggiornate."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni MyItalgas",
+        "data": {
+          "intervallo_ore": "Intervallo di aggiornamento",
+          "coefficiente": "Coefficiente di conversione (m³ → Smc)",
+          "prezzo": "Prezzo medio del gas (€/Smc)"
+        },
+        "data_description": {
+          "intervallo_ore": "Ogni quanto controllare se sul portale ci sono letture nuove. I contatori elettronici vengono letti circa una volta al mese: 12 ore sono più che sufficienti.",
+          "coefficiente": "Coefficiente C riportato in bolletta, usato per convertire i metri cubi in standard metri cubi (Smc).",
+          "prezzo": "Facoltativo. Prezzo medio per standard metro cubo, tutto compreso (lo trovi in bolletta). Se impostato, viene creata una statistica dei costi stimati per il pannello Energia; lo stesso prezzo si applica a tutto lo storico. 0 = disattivato."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "lettura": {
+        "name": "Lettura contatore",
+        "state_attributes": {
+          "data_lettura": {
+            "name": "Data lettura"
+          },
+          "tipologia": {
+            "name": "Tipologia lettura"
+          },
+          "matricola": {
+            "name": "Matricola contatore"
+          }
+        }
+      },
+      "data_lettura": {
+        "name": "Data ultima lettura",
+        "state_attributes": {
+          "tipologia": {
+            "name": "Tipologia lettura"
+          }
+        }
+      },
+      "consumo_periodo": {
+        "name": "Consumo ultimo periodo",
+        "state_attributes": {
+          "dal": {
+            "name": "Dal"
+          },
+          "al": {
+            "name": "Al"
+          },
+          "giorni": {
+            "name": "Giorni"
+          }
+        }
+      },
+      "consumo_periodo_smc": {
+        "name": "Consumo ultimo periodo (Smc)",
+        "state_attributes": {
+          "dal": {
+            "name": "Dal"
+          },
+          "al": {
+            "name": "Al"
+          },
+          "giorni": {
+            "name": "Giorni"
+          }
+        }
+      },
+      "media_giornaliera": {
+        "name": "Media giornaliera",
+        "state_attributes": {
+          "dal": {
+            "name": "Dal"
+          },
+          "al": {
+            "name": "Al"
+          },
+          "giorni": {
+            "name": "Giorni"
+          }
+        }
+      },
+      "consumo_anno": {
+        "name": "Consumo anno corrente",
+        "state_attributes": {
+          "anno": {
+            "name": "Anno"
+          }
+        }
+      },
+      "consumo_anno_precedente": {
+        "name": "Consumo anno precedente",
+        "state_attributes": {
+          "anno": {
+            "name": "Anno"
+          }
+        }
+      },
+      "ultimo_aggiornamento": {
+        "name": "Ultimo aggiornamento riuscito",
+        "state_attributes": {
+          "periodi_non_scaricati": {
+            "name": "Periodi non scaricati"
+          }
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Il portale MyItalgas ha rifiutato le credenziali."
+    },
+    "pdr_not_found": {
+      "message": "La fornitura {pdr} non è più associata al profilo MyItalgas."
+    },
+    "update_failed": {
+      "message": "Errore durante lo scaricamento delle letture: {errore}"
+    }
+  }
+}

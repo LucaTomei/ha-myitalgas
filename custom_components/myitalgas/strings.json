@@ -1,0 +1,174 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MyItalgas",
+        "description": "Sign in with the credentials of the MyItalgas customer portal (clienti.italgas.it).",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "The username you use on clienti.italgas.it.",
+          "password": "The password you use on clienti.italgas.it."
+        }
+      },
+      "pdr": {
+        "title": "Choose the supply",
+        "description": "Your MyItalgas profile has more than one supply point. Choose the one to add; you can add the others later by adding the integration again.",
+        "data": {
+          "pdr": "Supply point (PDR)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in to MyItalgas again",
+        "description": "The MyItalgas portal rejected the saved credentials for PDR {pdr}. Enter them again.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Update MyItalgas credentials",
+        "description": "New credentials for PDR {pdr}.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Wrong username or password.",
+      "cannot_connect": "The MyItalgas portal cannot be reached. Try again later.",
+      "portal_error": "The MyItalgas portal returned an unexpected response. Try again later.",
+      "no_pdr": "No supply is associated with this MyItalgas profile. Add it in the PdR section of the portal first.",
+      "pdr_missing": "The supply {pdr} is not associated with this MyItalgas profile.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "All the supplies of this profile are already configured.",
+      "reauth_successful": "Credentials updated.",
+      "reconfigure_successful": "Credentials updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MyItalgas options",
+        "data": {
+          "intervallo_ore": "Update interval",
+          "coefficiente": "Conversion coefficient (m³ → Smc)",
+          "prezzo": "Average gas price (€/Smc)"
+        },
+        "data_description": {
+          "intervallo_ore": "How often to check the portal for new readings. Smart meters are read about once a month: 12 hours is plenty.",
+          "coefficiente": "Coefficient C shown on your gas bill, used to convert cubic meters into standard cubic meters (Smc).",
+          "prezzo": "Optional. Average price per standard cubic meter, all costs included (see your bill). If set, an estimated cost statistic is created for the Energy dashboard; the same price is applied to the whole history. 0 = disabled."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "lettura": {
+        "name": "Meter reading",
+        "state_attributes": {
+          "data_lettura": {
+            "name": "Reading date"
+          },
+          "tipologia": {
+            "name": "Reading type"
+          },
+          "matricola": {
+            "name": "Meter serial number"
+          }
+        }
+      },
+      "data_lettura": {
+        "name": "Last reading date",
+        "state_attributes": {
+          "tipologia": {
+            "name": "Reading type"
+          }
+        }
+      },
+      "consumo_periodo": {
+        "name": "Last period consumption",
+        "state_attributes": {
+          "dal": {
+            "name": "From"
+          },
+          "al": {
+            "name": "To"
+          },
+          "giorni": {
+            "name": "Days"
+          }
+        }
+      },
+      "consumo_periodo_smc": {
+        "name": "Last period consumption (Smc)",
+        "state_attributes": {
+          "dal": {
+            "name": "From"
+          },
+          "al": {
+            "name": "To"
+          },
+          "giorni": {
+            "name": "Days"
+          }
+        }
+      },
+      "media_giornaliera": {
+        "name": "Daily average",
+        "state_attributes": {
+          "dal": {
+            "name": "From"
+          },
+          "al": {
+            "name": "To"
+          },
+          "giorni": {
+            "name": "Days"
+          }
+        }
+      },
+      "consumo_anno": {
+        "name": "Consumption this year",
+        "state_attributes": {
+          "anno": {
+            "name": "Year"
+          }
+        }
+      },
+      "consumo_anno_precedente": {
+        "name": "Consumption last year",
+        "state_attributes": {
+          "anno": {
+            "name": "Year"
+          }
+        }
+      },
+      "ultimo_aggiornamento": {
+        "name": "Last successful update",
+        "state_attributes": {
+          "periodi_non_scaricati": {
+            "name": "Periods not downloaded"
+          }
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "The MyItalgas portal rejected the credentials."
+    },
+    "pdr_not_found": {
+      "message": "The supply {pdr} is no longer associated with the MyItalgas profile."
+    },
+    "update_failed": {
+      "message": "Error while downloading the readings: {errore}"
+    }
+  }
+}

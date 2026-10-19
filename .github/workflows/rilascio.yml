@@ -1,0 +1,57 @@
+name: Rilascio
+
+# Avviato da scripts/rilascia.sh dopo aver creato la bozza della release.
+on:
+  workflow_dispatch:
+    inputs:
+      versione:
+        description: "Versione da pubblicare (es. 1.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rilascio
+  cancel-in-progress: false
+
+jobs:
+  validazione:
+    uses: ./.github/workflows/validazione.yml
+
+  pubblica:
+    name: Pubblica la release
+    needs: validazione
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSIONE: ${{ inputs.versione }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Controlla la versione
+        run: |
+          if ! [[ "$VERSIONE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Versione non valida: $VERSIONE (formato atteso X.Y.Z)"
+            exit 1
+          fi
+          MANIFEST=$(jq -r .version custom_components/myitalgas/manifest.json)
+          if [ "$MANIFEST" != "$VERSIONE" ]; then
+            echo "::error::manifest.json indica $MANIFEST, non $VERSIONE"
+            exit 1
+          fi
+          if [ "$(gh release view "v$VERSIONE" --json isDraft --jq .isDraft)" != "true" ]; then
+            echo "::error::Manca la bozza della release v$VERSIONE (usa scripts/rilascia.sh)"
+            exit 1
+          fi
+
+      - name: Crea il pacchetto
+        run: |
+          cd custom_components/myitalgas
+          zip -r -X "$GITHUB_WORKSPACE/myitalgas.zip" . -x "__pycache__/*" "*.pyc"
+          unzip -l "$GITHUB_WORKSPACE/myitalgas.zip"
+
+      - name: Allega il pacchetto e pubblica
+        run: |
+          gh release upload "v$VERSIONE" myitalgas.zip --clobber
+          gh release edit "v$VERSIONE" --draft=false --latest

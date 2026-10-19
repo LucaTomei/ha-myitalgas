@@ -1,0 +1,41 @@
+name: Segnalazione problema
+description: Qualcosa non funziona come dovrebbe
+labels: [bug]
+body:
+  - type: textarea
+    id: descrizione
+    attributes:
+      label: Cosa succede
+      description: Descrivi il problema e cosa ti aspettavi.
+    validations:
+      required: true
+  - type: input
+    id: versione_ha
+    attributes:
+      label: Versione di Home Assistant
+      placeholder: "2026.10.2"
+    validations:
+      required: true
+  - type: input
+    id: versione_integrazione
+    attributes:
+      label: Versione di MyItalgas
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >
+        Attiva il debug (Impostazioni → Dispositivi e servizi → MyItalgas → ⋮ → Abilita il
+        debug), riproduci il problema e incolla qui le righe di log. Controlla che non
+        contengano dati personali.
+      render: text
+  - type: textarea
+    id: diagnostica
+    attributes:
+      label: Diagnostica
+      description: >
+        Facoltativa: Impostazioni → Dispositivi e servizi → MyItalgas → ⋮ → Scarica
+        diagnostica. Credenziali, PDR, matricola e indirizzo sono già oscurati.

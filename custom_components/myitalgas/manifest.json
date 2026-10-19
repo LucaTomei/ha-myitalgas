@@ -1,0 +1,17 @@
+{
+  "domain": "myitalgas",
+  "name": "MyItalgas",
+  "codeowners": [
+    "@LucaTomei"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "recorder"
+  ],
+  "documentation": "https://github.com/LucaTomei/ha-myitalgas",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/LucaTomei/ha-myitalgas/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}
